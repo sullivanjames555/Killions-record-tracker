@@ -19,7 +19,7 @@ GitHub builds the installer automatically:
 - **Releases** (right-hand side of the repo page): download `My Record Shelf Setup x.x.x.exe` from the latest release. No sign-in needed.
 - **Actions** tab: every push to `main` builds a fresh installer. Open the newest run and download **My-Record-Shelf-Setup** under *Artifacts* (it comes as a .zip; you must be signed in).
 
-To publish a new release, update `"version"` in `package.json`, then push a matching tag, for example `git tag v1.0.1 && git push origin v1.0.1`.
+To publish a release: on GitHub open **Releases → Draft a new release**, type a tag such as `v1.0.0` (choose *Create new tag*), and press **Publish release**. About 10 minutes later the installer appears on the release page. For later versions, update `"version"` in `package.json` first.
 
 ## 1. Or build the installer yourself (on any Windows 10/11 PC)
 
