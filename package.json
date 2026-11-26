@@ -1,0 +1,49 @@
+{
+  "name": "my-record-shelf",
+  "productName": "My Record Shelf",
+  "version": "1.0.0",
+  "description": "A large-print record collection app: covers, sleeve info and values, made easy.",
+  "main": "main.js",
+  "author": "James Sullivan",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/lookup.test.js",
+    "dist": "electron-builder --win nsis --x64 --ia32",
+    "dist:64": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.myrecordshelf.app",
+    "productName": "My Record Shelf",
+    "copyright": "Copyright © 2026 James Sullivan",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "My Record Shelf",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
