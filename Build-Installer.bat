@@ -1,5 +1,5 @@
 @echo off
-title Build My Record Shelf installer
+title Build Killion's Record Shelf installer
 cd /d "%~dp0"
 where node >NUL 2>NUL || (
   echo Node.js is not installed on this computer.
@@ -14,7 +14,7 @@ call npm test || goto :err
 echo Step 3 of 3: building the installer...
 call npm run dist || goto :err
 echo.
-echo Done! The installer is in the "dist" folder: "My Record Shelf Setup 1.0.0.exe"
+echo Done! The installer is in the "dist" folder: "Killions-Record-Shelf-Setup-1.0.0.exe"
 start "" "%~dp0dist"
 pause
 exit /b 0

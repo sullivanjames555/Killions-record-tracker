@@ -1,4 +1,4 @@
-# My Record Shelf
+# Killion's Record Shelf
 
 A large-print record collection program for Windows 8, 8.1, 10 and 11.
 
@@ -16,8 +16,8 @@ A large-print record collection program for Windows 8, 8.1, 10 and 11.
 
 GitHub builds the installer automatically:
 
-- **Releases** (right-hand side of the repo page): download `My Record Shelf Setup x.x.x.exe` from the latest release. No sign-in needed.
-- **Actions** tab: every push to `main` builds a fresh installer. Open the newest run and download **My-Record-Shelf-Setup** under *Artifacts* (it comes as a .zip; you must be signed in).
+- **Releases** (right-hand side of the repo page): download `Killions-Record-Shelf-Setup-x.x.x.exe` from the latest release. No sign-in needed.
+- **Actions** tab: every push to `main` builds a fresh installer. Open the newest run and download **Killions-Record-Shelf-Setup** under *Artifacts* (it comes as a .zip; you must be signed in).
 
 To publish a release: on GitHub open **Releases → Draft a new release**, type a tag such as `v1.0.0` (choose *Create new tag*), and press **Publish release**. About 10 minutes later the installer appears on the release page. For later versions, update `"version"` in `package.json` first.
 
@@ -27,7 +27,7 @@ To publish a release: on GitHub open **Releases → Draft a new release**, type 
 2. Unzip this folder somewhere, for example `Documents\record-shelf`.
 3. Double-click **`Build-Installer.bat`**.
    The first run downloads the building blocks (a few minutes), runs the self-tests, then builds the installer.
-4. When it finishes, the `dist` folder opens with **`My Record Shelf Setup 1.0.0.exe`**.
+4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.0.0.exe`**.
 
 That one installer works on Windows 8, 8.1, 10 and 11, in both 32-bit and 64-bit versions.
 
@@ -35,8 +35,8 @@ To try the program without installing it, double-click **`Try-Without-Installing
 
 ## 2. Install it on the record collector's computer
 
-Copy `My Record Shelf Setup 1.0.0.exe` over (on a USB stick, for example) and double-click it.
-It installs without asking any questions, puts **My Record Shelf** on the desktop and in the Start menu, and opens it.
+Copy `Killions-Record-Shelf-Setup-1.0.0.exe` over (on a USB stick, for example) and double-click it.
+It installs without asking any questions, puts **Killion's Record Shelf** on the desktop and in the Start menu, and opens it.
 
 **"Windows protected your PC"**: Windows shows this for any program that isn't code-signed. Click **More info** and then **Run anyway**.
 To avoid the warning, sign the installer with a code-signing certificate. Set `CSC_LINK` (path to the .pfx) and `CSC_KEY_PASSWORD` before running the build, or add `certificateFile` to the `win` section of `package.json`.
@@ -45,7 +45,7 @@ To avoid the warning, sign the installer with a code-signing certificate. Set `C
 
 1. Make a free account at <https://www.discogs.com>.
 2. Go to **Settings → Developers** (<https://www.discogs.com/settings/developers>) and press **Generate new token**.
-3. In My Record Shelf, open **Settings**, paste the token under *Record values*, and press **Save**.
+3. In Killion's Record Shelf, open **Settings**, paste the token under *Record values*, and press **Save**.
 
 Discogs gives a value for each condition (Like new, Very good, Good, Worn) if the account has its seller settings filled in. Without them, the app shows the lowest price currently for sale.
 
@@ -59,7 +59,7 @@ Keys are encrypted with Windows' own data protection (DPAPI), stay on that compu
 
 ## Where things are saved
 
-`%APPDATA%\My Record Shelf\`
+`%APPDATA%\Killion's Record Shelf\`
 - `records.json`: the collection. A spare copy, `records.json.bak`, is kept automatically.
 - `covers\`: the cover pictures.
 

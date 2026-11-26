@@ -26,7 +26,7 @@ function crypt() {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 900, minHeight: 640,
-    title: 'My Record Shelf',
+    title: 'Killion\'s Record Shelf',
     backgroundColor: '#FFFFFF',
     icon: path.join(__dirname, 'renderer', 'icon.png'),
     show: false,
@@ -197,7 +197,7 @@ function registerIpc() {
   });
 
   handle('backup:restore', async () => {
-    const r = await dialog.showOpenDialog(win, { title: 'Choose the backup folder (it is named "My Record Shelf backup ...")', properties: ['openDirectory'] });
+    const r = await dialog.showOpenDialog(win, { title: 'Choose the backup folder (it is named "Killion\'s Record Shelf backup ...")', properties: ['openDirectory'] });
     if (r.canceled || !r.filePaths[0]) return null;
     return store.restoreFrom(r.filePaths[0]);
   });

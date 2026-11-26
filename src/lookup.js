@@ -7,7 +7,7 @@
 const https = require('https');
 const { URL } = require('url');
 
-const UA = 'MyRecordShelf/1.0.0 (personal record collection app for Windows)';
+const UA = 'KillionsRecordShelf/1.0.0 (personal record collection app for Windows)';
 const MB = 'https://musicbrainz.org/ws/2';
 const DISCOGS = 'https://api.discogs.com';
 

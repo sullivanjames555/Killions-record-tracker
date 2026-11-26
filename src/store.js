@@ -121,7 +121,7 @@ class Store {
   // ---- backup ----
   backupTo(folder) {
     const stamp = new Date().toISOString().slice(0, 10);
-    const dest = path.join(folder, 'My Record Shelf backup ' + stamp);
+    const dest = path.join(folder, 'Killion\'s Record Shelf backup ' + stamp);
     fs.mkdirSync(path.join(dest, 'covers'), { recursive: true });
     const copy = JSON.parse(JSON.stringify(this.data));
     copy.secrets = {}; // keys are tied to this computer; never copy them out

@@ -1,6 +1,6 @@
 {
-  "name": "my-record-shelf",
-  "productName": "My Record Shelf",
+  "name": "killions-record-shelf",
+  "productName": "Killion's Record Shelf",
   "version": "1.0.0",
   "description": "A large-print record collection app: covers, sleeve info and values, made easy.",
   "main": "main.js",
@@ -18,8 +18,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.myrecordshelf.app",
-    "productName": "My Record Shelf",
+    "appId": "com.killionsrecordshelf.app",
+    "productName": "Killion's Record Shelf",
     "copyright": "Copyright © 2026 James Sullivan",
     "directories": {
       "buildResources": "build",
@@ -41,7 +41,8 @@
       "perMachine": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "My Record Shelf",
+      "shortcutName": "Killion's Record Shelf",
+      "artifactName": "Killions-Record-Shelf-Setup-${version}.${ext}",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     }

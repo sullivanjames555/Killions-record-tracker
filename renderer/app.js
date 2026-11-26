@@ -1,5 +1,5 @@
 'use strict';
-/* My Record Shelf — the screen.
+/* Killion's Record Shelf — the screen.
    Everything the user sees is built here. Data and internet look-ups go through window.shelf (preload.js). */
 {
   const api = window.shelf;
@@ -666,7 +666,7 @@
       '<div class="row"><button class="btn primary" data-action="backup">Back up my collection</button><button class="btn" data-action="restore">Restore from a backup</button>' +
       '<button class="btn" data-action="data-folder">Show where it is saved</button></div>' +
       '<p class="small muted">Saved in: ' + esc(s.dataDir || '') + '</p></section>' +
-      '<p class="small muted">My Record Shelf ' + esc(S.version) + '. Record details from MusicBrainz and the Cover Art Archive; values from Discogs.</p>';
+      '<p class="small muted">Killion\'s Record Shelf ' + esc(S.version) + '. Record details from MusicBrainz and the Cover Art Archive; values from Discogs.</p>';
   }
 
   // ---------------- Help ----------------

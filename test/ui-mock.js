@@ -15,7 +15,7 @@
     { id: 'r5', list: 'collection', title: 'Copper Canyon', artist: 'Dale Whitfield', year: '1975', haveCover: false, condition: 'g', prices: { g: 6 }, tracks: [], credits: [], addedAt: new Date(now - 5000).toISOString() },
     { id: 'r6', list: 'wish', title: 'Moonlight Sessions', artist: 'Ada Bell Quartet', year: '1962', frontUrl: svg('#101218', '#2B2F3A', '#F1E7D0'), prices: { vgp: 70 }, tracks: [], credits: [], addedAt: new Date(now - 6000).toISOString() }
   ];
-  let settings = { textSize: 2, hasDiscogs: true, hasClaude: false, dataDir: 'C:\\Users\\Jim\\AppData\\Roaming\\My Record Shelf' };
+  let settings = { textSize: 2, hasDiscogs: true, hasClaude: false, dataDir: 'C:\\Users\\Jim\\AppData\\Roaming\\Killion\'s Record Shelf' };
   const wait = ms => new Promise(r => setTimeout(r, ms));
   let n = 100;
   window.shelf = {
