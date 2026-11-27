@@ -27,7 +27,7 @@ To publish a release: on GitHub open **Releases → Draft a new release**, type 
 2. Unzip this folder somewhere, for example `Documents\record-shelf`.
 3. Double-click **`Build-Installer.bat`**.
    The first run downloads the building blocks (a few minutes), runs the self-tests, then builds the installer.
-4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.0.0.exe`**.
+4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.1.0.exe`**.
 
 That one installer works on Windows 8, 8.1, 10 and 11, in both 32-bit and 64-bit versions.
 
@@ -35,7 +35,7 @@ To try the program without installing it, double-click **`Try-Without-Installing
 
 ## 2. Install it on the record collector's computer
 
-Copy `Killions-Record-Shelf-Setup-1.0.0.exe` over (on a USB stick, for example) and double-click it.
+Copy `Killions-Record-Shelf-Setup-1.1.0.exe` over (on a USB stick, for example) and double-click it.
 It installs without asking any questions, puts **Killion's Record Shelf** on the desktop and in the Start menu, and opens it.
 
 **"Windows protected your PC"**: Windows shows this for any program that isn't code-signed. Click **More info** and then **Run anyway**.
@@ -46,8 +46,18 @@ To avoid the warning, sign the installer with a code-signing certificate. Set `C
 1. Make a free account at <https://www.discogs.com>.
 2. Go to **Settings → Developers** (<https://www.discogs.com/settings/developers>) and press **Generate new token**.
 3. In Killion's Record Shelf, open **Settings**, paste the token under *Record values*, and press **Save**.
+4. Press **Test my Discogs key**. It says whether the key works and whether values by condition are turned on.
+5. For values by condition (Like new, Very good, Good, Worn), fill in **Seller Settings** on the Discogs account once (<https://www.discogs.com/settings/seller>). You never have to sell anything.
 
-Discogs gives a value for each condition (Like new, Very good, Good, Worn) if the account has its seller settings filled in. Without them, the app shows the lowest price currently for sale.
+The app looks for a value in this order, and labels which one it is showing:
+
+1. **Your value**: typed on the record's form. This always wins.
+2. **Worth about (condition)**: Discogs' suggested price for the condition you chose. Needs Seller Settings.
+3. **Cheapest copy for sale now** of that exact pressing.
+4. **Cheapest copy of any version** of the same album.
+
+If none of these exist, the record shows the reason instead of a price. To check every record again, use **Update all values** on the Value report page.
+Each look-up is written to `lookup.log` in the data folder (Settings → *Open the look-up log*), which shows exactly what Discogs answered.
 
 ## 4. Optional: read photos automatically
 
@@ -60,6 +70,7 @@ Keys are encrypted with Windows' own data protection (DPAPI), stay on that compu
 ## Where things are saved
 
 `%APPDATA%\Killion's Record Shelf\`
+- `lookup.log`: what each value look-up found, for troubleshooting.
 - `records.json`: the collection. A spare copy, `records.json.bak`, is kept automatically.
 - `covers\`: the cover pictures.
 

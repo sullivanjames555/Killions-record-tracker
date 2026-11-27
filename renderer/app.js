@@ -34,11 +34,40 @@
     const opts = { style: 'currency', currency: 'USD', maximumFractionDigits: whole ? 0 : 2, minimumFractionDigits: whole ? 0 : 2 };
     return new Intl.NumberFormat('en-US', opts).format(n);
   }
-  function amountFor(r) {
-    const p = r && r.prices;
+  // The value to show, best source first: your own value, Discogs' price for the
+  // condition you picked, the cheapest copy of this pressing for sale, the cheapest of any pressing.
+  function valueInfo(r) {
+    if (!r) return null;
+    const mine = parseMoney(r.myValue);
+    if (mine) return { amount: mine, label: 'Your value', source: 'mine' };
+    const p = r.prices;
     if (!p) return null;
-    const v = p[r.condition || 'vgp'];
-    return v != null ? v : (p.lowest != null ? p.lowest : null);
+    const c = r.condition || 'vgp';
+    if (p[c] > 0) return { amount: p[c], label: 'Worth about (' + condLabel(c).toLowerCase() + ')', source: 'cond' };
+    if (p.lowest > 0) return { amount: p.lowest, label: 'Cheapest copy for sale now', source: 'lowest' };
+    if (p.anyLowest > 0) return { amount: p.anyLowest, label: 'Cheapest copy of any version for sale', source: 'any' };
+    return null;
+  }
+  const amountFor = r => { const v = valueInfo(r); return v ? v.amount : null; };
+  function parseMoney(v) { const n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; }
+  function valueNotes(r) {
+    const v = valueInfo(r), p = r.prices, note = (p && p.note) || '';
+    const out = [];
+    if (!v) {
+      if (!S.settings.hasDiscogs) out.push('Add your free Discogs key in Settings to see values.');
+      else if (!p) out.push('The value hasn’t been checked yet.');
+      else if (note.includes('noMatch')) out.push('Discogs couldn’t find this record. Check the album name and artist (or add the catalog number), then check again. Or type your own value.');
+      else if (note.includes('noneForSale')) out.push('Nobody has this record for sale on Discogs right now, so there is no price to go by. You can type your own value.');
+      else out.push('No price was found on Discogs.');
+    }
+    if (v && (v.source === 'lowest' || v.source === 'any') && note.includes('needsSeller')) {
+      out.push('For a value that matches the condition, fill in Seller Settings on the Discogs account (see Settings).');
+    }
+    if (p && p.checkedAt && v && v.source !== 'mine') {
+      const n = v.source === 'any' ? p.anyForSale : p.forSale;
+      out.push('From Discogs, checked ' + dateText(p.checkedAt) + (n ? ' · ' + n + ' for sale now' : ''));
+    }
+    return out;
   }
   function dateText(iso) {
     const d = new Date(iso);
@@ -60,6 +89,7 @@
     speaker: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
     refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/></svg>',
     plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
     heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>'
   };
 
@@ -78,7 +108,10 @@
     if (b && modal.close) modal.close(b.dataset.modal);
     else if (e.target === modalWrap && modal.close) modal.close('cancel');
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.close) modal.close('cancel'); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.close) modal.close('cancel');
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('form[data-form="edit"]')) e.preventDefault();
+  });
   function confirmBox(text, yes, no) {
     return modal('<p>' + esc(text) + '</p><div class="row"><button class="btn primary" data-modal="yes">' + esc(yes) +
       '</button><button class="btn" data-modal="no">' + esc(no) + '</button></div>').then(v => v === 'yes');
@@ -120,6 +153,7 @@
     if (target.type === 'add-front') onFrontPhoto(dataUrl);
     else if (target.type === 'add-back') { S.add.back = { dataUrl }; renderAdd(); }
     else if (target.type === 'detail') setOwnPhoto(target.id, target.side, dataUrl);
+    else if (target.type === 'edit') setEditPhoto(target.side, dataUrl);
   }
 
   // Drag-and-drop of photos straight from a folder.
@@ -198,14 +232,16 @@
   // ---------------- navigation ----------------
   function go(view) {
     S.view = view;
+    const navView = view === 'edit' && S.edit ? (S.edit.isNew ? 'add' : (S.edit.rec.list === 'wish' ? 'wish' : 'records')) : view;
     document.querySelectorAll('.nav-btn').forEach(b => {
-      const on = b.dataset.view === view;
+      const on = b.dataset.view === navView;
       b.classList.toggle('active', on);
       if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
     stopSpeaking();
     if (view === 'records' || view === 'wish') renderShelf();
     else if (view === 'add') renderAdd();
+    else if (view === 'edit' && S.edit) renderEdit();
     else if (view === 'report') renderReport();
     else if (view === 'settings') renderSettings();
     else if (view === 'help') renderHelp();
@@ -295,24 +331,14 @@
   }
 
   function valueBox(r) {
-    const amt = amountFor(r);
-    const p = r.prices;
+    const v = valueInfo(r);
     const q = encodeURIComponent(((r.artist || '') + ' ' + (r.title || '')).trim());
     const dUrl = r.discogsId ? 'https://www.discogs.com/release/' + encodeURIComponent(r.discogsId) : 'https://www.discogs.com/search/?type=release&q=' + q;
     const eUrl = 'https://www.ebay.com/sch/i.html?_nkw=' + q + '+vinyl&LH_Sold=1&LH_Complete=1';
-    let body;
-    if (amt != null) {
-      const usedLowest = p && p[r.condition || 'vgp'] == null;
-      body = '<div><div class="lbl">' + (usedLowest ? 'Lowest price for sale now' : 'Worth about (' + esc(condLabel(r.condition).toLowerCase()) + ')') + '</div>' +
-        '<div class="amt">' + esc(money(amt)) + '</div>' +
-        '<div class="note">From Discogs' + (p.checkedAt ? ', checked ' + esc(dateText(p.checkedAt)) : '') +
-        (p.forSale ? ' · ' + p.forSale + ' for sale now' : '') + '</div></div>';
-    } else if (!S.settings.hasDiscogs) {
-      body = '<div class="lbl">Value</div><div>Add your free Discogs key in Settings to see what this record is worth.</div>';
-    } else {
-      body = '<div class="lbl">Value</div><div>No recent sales were found for this exact record. Try the buttons below.</div>';
-    }
-    return '<div class="value-box">' + body +
+    return '<div class="value-box">' +
+      '<div class="lbl">' + esc(v ? v.label : 'Value') + '</div>' +
+      (v ? '<div class="amt">' + esc(money(v.amount)) + '</div>' : '') +
+      valueNotes(r).map(t => '<div class="note">' + esc(t) + '</div>').join('') +
       (S.settings.hasDiscogs ? '<button class="btn refresh" data-action="refresh-value" data-id="' + esc(r.id) + '">' + icon.refresh + 'Check today’s value</button>' : '') +
       '<div class="links"><button class="btn" data-action="open" data-url="' + esc(dUrl) + '">See on Discogs</button>' +
       '<button class="btn" data-action="open" data-url="' + esc(eUrl) + '">eBay sold prices</button></div></div>';
@@ -360,6 +386,7 @@
         '<button class="choice have" data-action="have" data-id="' + esc(r.id) + '" data-v="yes" aria-pressed="' + (r.haveCover === true) + '">Yes, I have it</button>' +
         '<button class="choice need" data-action="have" data-id="' + esc(r.id) + '" data-v="no" aria-pressed="' + (r.haveCover === false) + '">No, I need one</button></div></fieldset>' : '') +
       '<div><h2 class="rec-title">' + esc(r.title || 'Untitled') + '</h2><div class="rec-artist">' + esc(r.artist) + '</div><div class="rec-meta">' + esc(meta) + '</div></div>' +
+      '<button class="btn blue-line tall" data-action="edit" data-id="' + esc(r.id) + '">' + icon.pencil + 'Edit all the details</button>' +
       (inCollection ? '<fieldset class="box"><legend>What shape is the record in?</legend><div class="choice-grid">' +
         COND.map(c => '<button class="choice" data-action="condition" data-id="' + esc(r.id) + '" data-v="' + c.id + '" aria-pressed="' + ((r.condition || 'vgp') === c.id) + '">' + c.label + '</button>').join('') +
         '</div></fieldset>' : '') +
@@ -374,6 +401,18 @@
       '<div class="row">' + (r.mbid ? '<button class="btn" data-action="relookup" data-id="' + esc(r.id) + '">' + icon.refresh + 'Look it up again</button>' : '') +
       '<button class="btn danger" data-action="delete" data-id="' + esc(r.id) + '">Remove this record</button></div>' +
       (r.addedAt ? '<div class="small muted">Added ' + esc(dateText(r.addedAt)) + '</div>' : '');
+  }
+
+  async function setEditPhoto(side, dataUrl) {
+    if (!S.edit) return;
+    try {
+      const img = await api.saveImage(dataUrl);
+      const r = S.edit.rec;
+      if (side === 'back') { r.coverBack = img.name; r.backUrl = img.url; }
+      else { r.coverFront = img.name; r.frontUrl = img.url; r.coverSource = 'photo'; }
+      markDirty();
+      const c = document.getElementById('e-covers'); if (c) c.innerHTML = editCoversHtml(r);
+    } catch (e) { toast(e.message, true); }
   }
 
   async function setOwnPhoto(id, side, dataUrl) {
@@ -476,8 +515,7 @@
             '<span class="mm">' + esc([m.year, m.label, m.catno, m.country, m.format].filter(Boolean).join(' · ')) + '</span></span>' +
             '<span class="pick">This one</span></button>').join('') +
           '<button class="btn" data-action="manual">None of these — I’ll type it in myself</button>';
-      case 'manual': return manualForm();
-      case 'found': return foundPanel();
+      case 'loading-edit': return loader('Opening the form…');
       case 'error':
         return '<h2>Something went wrong</h2><p style="font-size:1.1rem;margin:0">' + esc(a.msg) + '</p>' +
           '<div class="row"><button class="btn primary" data-action="add-reset">Start again</button><button class="btn" data-action="manual">Type it in myself</button></div>';
@@ -486,41 +524,6 @@
           '<div class="empty" style="padding:1.5rem .5rem"><div class="disc" aria-hidden="true" style="width:6rem;height:6rem"></div>' +
           '<p>Your record will show up here with its cover, songs and value.</p></div>';
     }
-  }
-
-  function foundPanel() {
-    const d = S.add.draft;
-    const sleeve = safeUrl(d.frontUrl || (S.add.photo && S.add.photo.dataUrl));
-    const amt = amountFor(d);
-    const wish = S.add.forList === 'wish';
-    return '<div class="step"><div class="found-ok">' + icon.check + '</div><h2>We found it! Is this right?</h2></div>' +
-      '<div class="found-art" aria-hidden="true"><div class="holder"><div class="vinyl"></div>' +
-      (sleeve ? '<img class="sleeve" src="' + esc(sleeve) + '" alt="">' : '<div class="sleeve cover-blank"></div>') + '</div></div>' +
-      '<div><div class="rec-title" style="font-family:var(--head);font-weight:800">' + esc(d.title) + '</div><div class="rec-artist">' + esc(d.artist) + '</div>' +
-      '<div class="rec-meta">' + esc([d.year, d.label, d.catno, d.country, d.format, d.tracks && d.tracks.length ? d.tracks.length + ' songs' : ''].filter(Boolean).join(' · ')) + '</div></div>' +
-      (d.frontUrl && d.coverSource === 'auto' ? '<div class="pic-line"><span>' + icon.refresh.replace('<svg', '<svg style="width:1.1rem;height:1.1rem;fill:none;stroke:var(--blue);stroke-width:2.2"') + ' We grabbed a clean cover picture for you automatically.</span></div>' : '') +
-      (!wish ? '<fieldset class="box"><legend>Do you have the cover for this record?</legend><div class="choice-grid">' +
-        '<button class="choice have" data-action="draft-have" data-v="yes" aria-pressed="' + (d.haveCover === true) + '">Yes, I have it</button>' +
-        '<button class="choice need" data-action="draft-have" data-v="no" aria-pressed="' + (d.haveCover === false) + '">No, I need one</button></div></fieldset>' +
-        '<fieldset class="box"><legend>What shape is the record in?</legend><div class="choice-grid">' +
-        COND.map(c => '<button class="choice" data-action="draft-cond" data-v="' + c.id + '" aria-pressed="' + (d.condition === c.id) + '">' + c.label + '</button>').join('') +
-        '</div></fieldset>' : '') +
-      '<div class="value-box"><div class="lbl">' + (amt != null ? 'Worth about' : 'Value') + '</div>' +
-      (amt != null ? '<div class="amt">' + esc(money(amt)) + '</div><div class="note">From recent Discogs sales</div>'
-        : '<div>' + esc(d.priceError || (S.settings.hasDiscogs ? 'No recent sales were found for this exact record.' : 'Add your free Discogs key in Settings to see values.')) + '</div>') + '</div>' +
-      '<button class="btn yellow tall wide" data-action="save-draft">' + (wish ? icon.heart + 'Add to my wish list' : icon.check + 'Yes, add to my records') + '</button>' +
-      '<button class="btn wide" data-action="back-to-matches">Not quite — show the other versions</button>';
-  }
-
-  function manualForm() {
-    const d = S.add.draft || {};
-    const f = (id, label, v, ph) => '<div class="field"><label for="m-' + id + '">' + label + '</label><input id="m-' + id + '" class="input" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></div>';
-    return '<div class="step"><div class="step-num">2</div><h2>Type in the details</h2></div>' +
-      '<form data-form="manual" style="display:flex;flex-direction:column;gap:.7rem">' +
-      f('title', 'Album name', d.title, 'For example: Three Rivers Blues') + f('artist', 'Artist or band', d.artist) +
-      f('year', 'Year', d.year, 'For example: 1965') + f('label', 'Record label', d.label) + f('catno', 'Catalog number', d.catno, 'Printed on the spine or label') +
-      '<button class="btn yellow tall" type="submit">' + icon.check + (S.add.forList === 'wish' ? 'Add to my wish list' : 'Add to my records') + '</button>' +
-      '<button class="btn" type="button" data-action="add-reset">Cancel</button></form>';
   }
 
   function setStage(stage, extra) {
@@ -569,43 +572,151 @@
     setStage('loading');
     try {
       const d = await api.details(mbid);
-      const draft = { ...d, list: S.add.forList, condition: 'vgp', haveCover: null };
-      if (S.add.photo) {
-        const img = await api.saveImage(S.add.photo.dataUrl);
-        draft.userPhoto = img.name; draft.photoUrl = img.url;
-        if (!draft.coverFront) { draft.coverFront = img.name; draft.frontUrl = img.url; draft.coverSource = 'photo'; }
-      }
-      if (S.add.back && !draft.coverBack) {
-        const img = await api.saveImage(S.add.back.dataUrl);
-        draft.coverBack = img.name; draft.backUrl = img.url;
-      }
-      setStage('found', { draft });
+      const rec = { ...d, list: S.add.forList, condition: 'vgp', haveCover: null };
+      await attachAddPhotos(rec);
+      openEditor(rec, { isNew: true, fromLookup: true });
     } catch (e) { setStage('error', { msg: e.message }); }
   }
 
-  async function saveDraft(draft) {
+  // Photos taken on the Add page become the record's pictures (unless a cleaner one was found online).
+  async function attachAddPhotos(rec) {
+    if (S.add.photo) {
+      const img = await api.saveImage(S.add.photo.dataUrl);
+      rec.userPhoto = img.name; rec.photoUrl = img.url;
+      if (!rec.coverFront) { rec.coverFront = img.name; rec.frontUrl = img.url; rec.coverSource = 'photo'; }
+    }
+    if (S.add.back && !rec.coverBack) {
+      const img = await api.saveImage(S.add.back.dataUrl);
+      rec.coverBack = img.name; rec.backUrl = img.url;
+    }
+  }
+
+  async function openManual() {
+    setStage('loading-edit');
+    const rec = { list: S.add.forList, condition: 'vgp', haveCover: null, title: '', artist: '' };
+    const code = (S.add.code || '').trim();
+    if (code) { if (/^[\d\s-]{8,}$/.test(code)) rec.barcode = code.replace(/\D/g, ''); else rec.catno = code; }
+    const parts = (S.add.name || '').split(/\s+[-–—]\s+/);
+    if (parts.length === 2) { rec.artist = parts[0]; rec.title = parts[1]; } else rec.title = S.add.name || '';
+    try { await attachAddPhotos(rec); } catch (e) { toast(e.message, true); }
+    openEditor(rec, { isNew: true, fromLookup: false });
+  }
+
+  // ---------------- The full-page record form ----------------
+  function openEditor(rec, opts) {
+    S.edit = { rec: JSON.parse(JSON.stringify(rec)), isNew: !!opts.isNew, fromLookup: !!opts.fromLookup, dirty: false };
+    S.edit.songsText = songsToText(S.edit.rec.tracks);
+    go('edit');
+  }
+  function songsToText(tracks) {
+    return (tracks || []).map(t => [t.pos, t.title, t.length].filter(Boolean).join('   ')).join('\n');
+  }
+  function textToSongs(text) {
+    return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+      const m = /^([A-Za-z]?\d{1,2}[a-z]?)[.)]?\s+(.+?)(?:\s+(\d{1,2}:\d{2}))?$/.exec(l);
+      if (m) return { side: /^[A-Za-z]/.test(m[1]) ? 'Side ' + m[1][0].toUpperCase() : '', pos: m[1], title: m[2], length: m[3] || '' };
+      const t = /^(.+?)\s+(\d{1,2}:\d{2})$/.exec(l);
+      return t ? { side: '', pos: '', title: t[1], length: t[2] } : { side: '', pos: '', title: l, length: '' };
+    });
+  }
+
+  function editCoversHtml(r) {
+    const front = safeUrl(r.frontUrl || r.photoUrl), back = safeUrl(r.backUrl);
+    const src = r.coverSource === 'photo' ? 'Your own photo' : (r.frontUrl ? 'Found automatically' : '');
+    return '<div class="label">Front cover</div>' +
+      (front ? '<img class="cover" src="' + esc(front) + '" alt="Front cover">' : '<div class="cover cover-blank" aria-hidden="true"></div>') +
+      (src ? '<div class="small muted">' + esc(src) + '</div>' : '') +
+      '<div class="row">' + '<button class="btn" type="button" data-action="edit-photo" data-side="front">' + icon.folder + (front ? 'Change picture' : 'Add a picture') + '</button>' +
+      (!front && r.mbid ? '<button class="btn" type="button" data-action="edit-find-cover">' + icon.refresh + 'Find it for me</button>' : '') + '</div>' +
+      '<div class="label" style="margin-top:.6rem">Back cover</div>' +
+      (back ? '<img class="cover back-cover" src="' + esc(back) + '" alt="Back cover">' : '<div class="cover cover-blank back-cover" aria-hidden="true"></div>') +
+      '<div class="row"><button class="btn" type="button" data-action="edit-photo" data-side="back">' + icon.folder + (back ? 'Change picture' : 'Add a picture') + '</button></div>';
+  }
+
+  function editValueHtml(r) {
+    const v = valueInfo(r);
+    return '<div class="value-box"><div class="lbl">' + esc(v ? v.label : 'Value') + '</div>' +
+      (v ? '<div class="amt">' + esc(money(v.amount)) + '</div>' : '') +
+      valueNotes(r).map(t => '<div class="note">' + esc(t) + '</div>').join('') + '</div>';
+  }
+
+  function choiceGroup(key, options, current, cols) {
+    return '<div class="choice-grid" style="grid-template-columns:repeat(' + (cols || options.length) + ',minmax(0,1fr))">' +
+      options.map(([v, label, cls]) => '<button type="button" class="choice' + (cls ? ' ' + cls : '') + '" data-action="edit-choice" data-k="' + key + '" data-v="' + v + '" aria-pressed="' + (String(current) === v) + '">' + esc(label) + '</button>').join('') + '</div>';
+  }
+
+  function renderEdit() {
+    const E = S.edit, r = E.rec;
+    const field = (id, label, v, ph, full) => '<div class="field' + (full ? ' full' : '') + '"><label for="e-' + id + '">' + label + '</label>' +
+      '<input id="e-' + id + '" name="' + id + '" class="input" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '" autocomplete="off"></div>';
+    const title = E.isNew ? (E.fromLookup ? 'Check the details, then save' : 'Type in the details') : 'Edit record';
+    const sub = E.isNew && E.fromLookup ? 'We filled in what we found. Change anything that isn’t right.' : 'Fill in what you know. Only the album name is needed.';
+    main.innerHTML = '<form data-form="edit" class="editor" novalidate>' +
+      '<div class="page-head"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(sub) + ' Nothing is saved until you press <strong>Save</strong>.</div></div></div>' +
+      '<div class="editor-grid">' +
+      '<section class="edit-covers" id="e-covers">' + editCoversHtml(r) + '</section>' +
+      '<div class="edit-main">' +
+      '<section class="edit-section"><h2>About the record</h2><div class="fields">' +
+      field('title', 'Album name', r.title, 'For example: Elvis', true) + field('artist', 'Artist or band', r.artist, 'For example: Elvis Presley', true) +
+      field('year', 'Year', r.year, 'For example: 1956') + field('country', 'Country', r.country, 'For example: US') +
+      field('label', 'Record label', r.label, 'For example: RCA Victor') + field('catno', 'Catalog number', r.catno, 'On the spine or centre label') +
+      field('barcode', 'Barcode', r.barcode, 'Newer records only') + field('format', 'Format', r.format, 'For example: 12" Vinyl') +
+      '</div></section>' +
+      '<section class="edit-section"><h2>Where does it go?</h2>' + choiceGroup('list', [['collection', 'My records'], ['wish', 'My wish list']], r.list || 'collection') + '</section>' +
+      '<section class="edit-section" id="e-cover-q"' + (r.list === 'wish' ? ' hidden' : '') + '><h2>Do I have the cover for this record?</h2>' +
+      choiceGroup('haveCover', [['true', 'Yes, I have it', 'have'], ['false', 'No, I need one', 'need'], ['null', 'Not sure']], r.haveCover === true ? 'true' : r.haveCover === false ? 'false' : 'null') + '</section>' +
+      '<section class="edit-section"><h2>What shape is the record in?</h2>' + choiceGroup('condition', COND.map(c => [c.id, c.label]), r.condition || 'vgp', 4) + '</section>' +
+      '<section class="edit-section"><h2>Value</h2><div id="e-value">' + editValueHtml(r) + '</div>' +
+      '<div class="row">' + (S.settings.hasDiscogs ? '<button class="btn primary" type="button" data-action="edit-check-value">' + icon.refresh + 'Check the value now</button>' : '<button class="btn" type="button" data-view="settings">Set up values in Settings</button>') + '</div>' +
+      '<div class="field"><label for="e-myValue">Or type your own value</label><input id="e-myValue" name="myValue" class="input money" value="' + esc(r.myValue || '') + '" placeholder="$" inputmode="decimal" autocomplete="off">' +
+      '<div class="small muted">If you type a value here, it is used instead of the Discogs price.</div></div></section>' +
+      '<section class="edit-section"><h2>My notes</h2><div class="fields">' + field('paid', 'What I paid', r.paid, 'For example: $4 at a yard sale', true) +
+      '<div class="field full"><label for="e-notes">Notes</label><textarea id="e-notes" name="notes" class="input" placeholder="Where I got it, who gave it to me, any scratches…">' + esc(r.notes || '') + '</textarea></div></div></section>' +
+      '<section class="edit-section"><h2>Songs</h2><div class="field"><label for="e-songs">One song per line. You can start a line with its side and number, like <strong>A1</strong>, and end it with the length, like <strong>3:12</strong>.</label>' +
+      '<textarea id="e-songs" name="songs" class="input songs-box" placeholder="A1  Heartbreak Hotel  2:08">' + esc(E.songsText) + '</textarea></div></section>' +
+      '</div></div>' +
+      '<div class="save-bar"><span class="muted" id="e-dirty"></span>' +
+      '<button class="btn tall" type="button" data-action="edit-cancel">Cancel</button>' +
+      '<button class="btn yellow tall" type="submit">' + icon.check + 'Save</button></div></form>';
+    main.scrollTop = 0;
+    const t = document.getElementById('e-title'); if (t && !r.title) t.focus();
+  }
+
+  function readEditForm() {
+    const E = S.edit, r = E.rec, f = main.querySelector('form[data-form="edit"]');
+    if (!f) return r;
+    for (const k of ['title', 'artist', 'year', 'country', 'label', 'catno', 'barcode', 'format', 'paid', 'notes', 'myValue']) {
+      const el = f.elements[k]; if (el) r[k] = el.value.trim();
+    }
+    const songs = f.elements.songs ? f.elements.songs.value : E.songsText;
+    if (songs.trim() !== E.songsText.trim()) { r.tracks = textToSongs(songs); E.songsText = songs; }
+    return r;
+  }
+  function refreshEditValue() { const box = document.getElementById('e-value'); if (box && S.edit) box.innerHTML = editValueHtml(S.edit.rec); }
+  function markDirty() { if (S.edit) { S.edit.dirty = true; const d = document.getElementById('e-dirty'); if (d) d.textContent = 'Not saved yet'; } }
+
+  async function saveEditor() {
+    const r = readEditForm();
+    if (!r.title) { toast('Please type the album name.', true); const t = document.getElementById('e-title'); if (t) t.focus(); return; }
+    if (r.myValue && !parseMoney(r.myValue)) { toast('The value should be a number, like 25 or $25.', true); return; }
     try {
-      const saved = await saveRec({ ...draft, list: S.add.forList });
-      const wish = S.add.forList === 'wish';
-      S.add = freshAdd();
+      const saved = await saveRec(r);
+      const wasNew = S.edit.isNew;
+      S.edit = null;
+      if (wasNew) S.add = freshAdd();
       S.selId = saved.id; S.side = 'front'; S.filter = 'all'; S.q = '';
-      toast(wish ? 'Added to your wish list' : 'Added to your records');
-      go(wish ? 'wish' : 'records');
+      toast(wasNew ? (saved.list === 'wish' ? 'Added to your wish list' : 'Added to your records') : 'Saved');
+      go(saved.list === 'wish' ? 'wish' : 'records');
     } catch (e) { toast(e.message, true); }
   }
 
-  async function saveManual(form) {
-    const v = id => (form.querySelector('#m-' + id) || {}).value || '';
-    if (!v('title').trim()) { toast('Please type the album name.', true); return; }
-    const draft = { list: S.add.forList, title: v('title').trim(), artist: v('artist').trim(), year: v('year').trim(), label: v('label').trim(), catno: v('catno').trim(), condition: 'vgp', haveCover: null };
-    try {
-      if (S.add.photo) { const img = await api.saveImage(S.add.photo.dataUrl); draft.coverFront = img.name; draft.userPhoto = img.name; draft.coverSource = 'photo'; }
-      if (S.add.back) { const img = await api.saveImage(S.add.back.dataUrl); draft.coverBack = img.name; }
-      if (S.settings.hasDiscogs) {
-        try { const p = await api.prices(draft); draft.prices = p.prices; draft.discogsId = p.discogsId; } catch (e) { /* value can be checked later */ }
-      }
-      await saveDraft(draft);
-    } catch (e) { toast(e.message, true); }
+  async function cancelEditor() {
+    const E = S.edit;
+    if (E && (E.dirty || E.isNew) && !(await confirmBox(E.isNew ? 'Leave without adding this record?' : 'Leave without saving your changes?', 'Yes, leave', 'No, stay here'))) return;
+    const back = E && E.isNew ? 'add' : (E && E.rec.list === 'wish' ? 'wish' : 'records');
+    S.edit = null;
+    if (back === 'add' && S.add.stage === 'loading-edit') S.add.stage = 'start';
+    go(back);
   }
 
   // ---------------- Value report ----------------
@@ -617,7 +728,8 @@
     const wish = S.records.filter(r => r.list === 'wish').length;
     main.innerHTML =
       '<div class="page-head"><div><h1>Value report</h1><div class="sub">Prepared ' + esc(dateText(new Date().toISOString())) + '</div></div>' +
-      '<div class="row no-print"><button class="btn primary" data-action="print">Print</button><button class="btn" data-action="pdf">Save as PDF</button>' +
+      '<div class="row no-print">' + (S.settings.hasDiscogs ? '<button class="btn blue-line" data-action="update-all" id="update-all">' + icon.refresh + (S.updating ? 'Stop checking' : 'Update all values') + '</button>' : '') +
+      '<button class="btn primary" data-action="print">Print</button><button class="btn" data-action="pdf">Save as PDF</button>' +
       '<button class="btn" data-action="csv">Save as a spreadsheet</button></div></div>' +
       '<div class="stats"><div class="stat"><div class="n">' + rs.length + '</div><div class="l">records</div></div>' +
       '<div class="stat"><div class="n">' + esc(money(total) || '$0') + '</div><div class="l">total value (' + priced + ' with a value)</div></div>' +
@@ -653,7 +765,9 @@
       '<p>Values come from real sales on Discogs, the biggest record marketplace. It needs a free personal key:</p>' +
       '<ol style="margin:0;padding-left:1.4rem;font-size:1.05rem"><li>Make a free account at Discogs.</li><li>Open <a class="link" href="#" data-action="open" data-url="https://www.discogs.com/settings/developers">Discogs › Settings › Developers</a> and press <strong>Generate new token</strong>.</li><li>Copy the token and paste it below.</li></ol>' +
       '<form data-form="discogs" class="row"><label for="dkey" hidden>Discogs token</label><input id="dkey" type="password" class="input" style="flex:1 1 18rem" placeholder="' + (s.hasDiscogs ? 'Saved. Paste a new one to replace it.' : 'Paste your Discogs token here') + '" autocomplete="off">' +
-      '<button class="btn primary" type="submit">Save</button>' + (s.hasDiscogs ? '<button class="btn" type="button" data-action="clear-key" data-id="discogsToken">Remove</button>' : '') + '</form></section>' +
+      '<button class="btn primary" type="submit">Save</button>' + (s.hasDiscogs ? '<button class="btn" type="button" data-action="clear-key" data-id="discogsToken">Remove</button>' : '') + '</form>' +
+      (s.hasDiscogs ? '<div class="row"><button class="btn blue-line" data-action="test-discogs">' + icon.check + 'Test my Discogs key</button></div><div id="dtest" aria-live="polite"></div>' : '') +
+      '<p class="muted">For a value that matches each record’s condition, Discogs also asks you to fill in <a class="link" href="#" data-action="open" data-url="https://www.discogs.com/settings/seller">Seller Settings</a> once (you never have to sell anything). Until then, the app shows the cheapest copy for sale.</p></section>' +
 
       '<section class="panel"><h2>Read photos automatically (optional)</h2><div>' + status(s.hasClaude) + '</div>' +
       '<p>With this turned on, a photo of a cover is enough: Claude reads the name and catalog number for you. It needs an Anthropic API key from the Claude Console, and each photo costs a small amount (usually around a cent).</p>' +
@@ -664,7 +778,7 @@
 
       '<section class="panel"><h2>Keep my collection safe</h2><p>Make a backup now and then, for example onto a USB stick.</p>' +
       '<div class="row"><button class="btn primary" data-action="backup">Back up my collection</button><button class="btn" data-action="restore">Restore from a backup</button>' +
-      '<button class="btn" data-action="data-folder">Show where it is saved</button></div>' +
+      '<button class="btn" data-action="data-folder">Show where it is saved</button><button class="btn" data-action="open-log">Open the look-up log</button></div>' +
       '<p class="small muted">Saved in: ' + esc(s.dataDir || '') + '</p></section>' +
       '<p class="small muted">Killion\'s Record Shelf ' + esc(S.version) + '. Record details from MusicBrainz and the Cover Art Archive; values from Discogs.</p>';
   }
@@ -676,7 +790,9 @@
       ['Why does it show several versions?', 'Most records were pressed many times, in different years and countries. Pick the one whose label, year and catalog number match yours. The catalog number is usually on the spine and the centre label.'],
       ['Where do the cover pictures come from?', 'They are found automatically in a free online library of album covers. If there isn’t one, your own photo is used. You can always press "Use my own photo" to change it.'],
       ['How do I mark that I have the cover?', 'Click a record, then press "Yes, I have it" or "No, I need one". Press "Need a cover" at the top of My Records to see every record that still needs one.'],
-      ['How is the value worked out?', 'From recent sales on Discogs, for the shape you choose. Press "Check today’s value" to update it. Values are a guide, not an appraisal.'],
+      ['How is the value worked out?', 'From Discogs, the biggest record marketplace. Best is its price for the shape you chose (this needs Seller Settings filled in on the Discogs account). Otherwise it shows the cheapest copy for sale now, or the cheapest copy of any version of that album. You can always type your own value instead. Values are a guide, not an appraisal.'],
+      ['How do I change a record\u2019s details?', 'Click the record, then press "Edit all the details". Change anything you like, then press the yellow Save button at the bottom. Nothing changes until you press Save.'],
+      ['A record has no value. What can I do?', 'Open Settings and press "Test my Discogs key". Then click the record, press "Edit all the details", check the album name and artist, and press "Check the value now". If nobody is selling it, type your own value.'],
       ['The words are too small.', 'Press "A +" at the bottom left, or choose Extra large in Settings.'],
       ['Can it read a record out loud?', 'Yes. Click a record and press "Read it to me".'],
       ['How do I keep my collection safe?', 'Go to Settings and press "Back up my collection". Put the backup on a USB stick.']
@@ -756,13 +872,67 @@
     'pick-back': () => choosePhoto({ type: 'add-back' }),
     'webcam': () => webcam({ type: 'add-front' }),
     'pick-match': el => pickMatch(el.dataset.id),
-    'manual': () => setStage('manual'),
+    'manual': () => openManual(),
+    'edit': el => { const r = byId(el.dataset.id); if (r) openEditor(r, { isNew: false }); },
+    'edit-choice': el => {
+      const k = el.dataset.k, raw = el.dataset.v;
+      const v = k === 'haveCover' ? (raw === 'true' ? true : raw === 'false' ? false : null) : raw;
+      S.edit.rec[k] = v; markDirty();
+      el.parentElement.querySelectorAll('.choice').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+      if (k === 'list') { const q = document.getElementById('e-cover-q'); if (q) q.hidden = v === 'wish'; }
+      if (k === 'condition') refreshEditValue();
+    },
+    'edit-photo': el => choosePhoto({ type: 'edit', side: el.dataset.side }),
+    'edit-find-cover': async () => {
+      const r = readEditForm();
+      toast('Looking for the picture…');
+      try {
+        const c = await api.fetchCover(r);
+        if (c && (c.coverFront || c.coverBack)) {
+          if (c.coverFront) { r.coverFront = c.coverFront; r.frontUrl = c.frontUrl; r.coverSource = 'auto'; }
+          if (c.coverBack && !r.coverBack) { r.coverBack = c.coverBack; r.backUrl = c.backUrl; }
+          markDirty(); document.getElementById('e-covers').innerHTML = editCoversHtml(r); toast('Picture found');
+        } else toast('No picture could be found. You can add your own photo.', true);
+      } catch (e) { toast(e.message, true); }
+    },
+    'edit-check-value': async el => {
+      const r = readEditForm();
+      if (!r.title) { toast('Please type the album name first.', true); return; }
+      el.disabled = true; el.lastChild.textContent = 'Checking…';
+      try {
+        const p = await api.prices(r);
+        r.prices = p.prices; r.discogsId = p.discogsId || r.discogsId; markDirty();
+        toast(valueInfo(r) ? 'Value found' : 'No value found');
+      } catch (e) { toast(e.message, true); }
+      el.disabled = false; el.lastChild.textContent = 'Check the value now';
+      refreshEditValue();
+    },
+    'edit-cancel': () => cancelEditor(),
     'add-reset': () => { const l = S.add.forList; S.add = freshAdd(); S.add.forList = l; renderAdd(); },
-    'back-to-matches': () => setStage(S.add.matches.length ? 'matches' : 'start'),
-    'draft-have': el => { S.add.draft.haveCover = el.dataset.v === 'yes'; setStage('found'); },
-    'draft-cond': el => { S.add.draft.condition = el.dataset.v; setStage('found'); },
-    'save-draft': () => saveDraft(S.add.draft),
     // report
+    'update-all': async () => {
+      if (S.updating) { S.updating = false; return; }
+      const list = S.records.filter(r => !parseMoney(r.myValue));
+      if (!list.length) { toast('Nothing to check.'); return; }
+      S.updating = true; renderReport();
+      let found = 0, i = 0;
+      for (const r of list) {
+        if (!S.updating) break;
+        i++;
+        const b = document.getElementById('update-all');
+        if (b) b.lastChild.textContent = 'Stop checking (' + i + ' of ' + list.length + ')';
+        try {
+          const p = await api.prices(r);
+          const cur = byId(r.id) || r;
+          await saveRec({ ...cur, prices: p.prices || cur.prices, discogsId: p.discogsId || cur.discogsId });
+          if (valueInfo(byId(r.id))) found++;
+        } catch (e) { toast(e.message, true); if (/key|internet/i.test(e.message)) break; }
+        await new Promise(res => setTimeout(res, 4000)); // stay well inside Discogs' limit of 60 look-ups a minute
+      }
+      S.updating = false;
+      toast('Checked ' + i + ' records. ' + found + ' have a value.');
+      if (S.view === 'report') renderReport();
+    },
     'print': () => api.reportPrint().catch(e => toast(e.message, true)),
     'pdf': async () => { try { const p = await api.reportPdf(); if (p) toast('Saved the report'); } catch (e) { toast(e.message, true); } },
     'csv': async () => { try { const p = await api.exportCsv(csv()); if (p) toast('Saved the spreadsheet'); } catch (e) { toast(e.message, true); } },
@@ -778,12 +948,33 @@
       if (!(await confirmBox('Restoring replaces the records on this computer with the ones in the backup. Go ahead?', 'Yes, restore', 'Cancel'))) return;
       try { const n = await api.restore(); if (n != null) { toast('Restored ' + n + ' records'); await load(); } } catch (e) { toast(e.message, true); }
     },
-    'data-folder': () => api.openDataFolder()
+    'data-folder': () => api.openDataFolder(),
+    'open-log': () => api.openLog(),
+    'test-discogs': async el => {
+      const out = document.getElementById('dtest');
+      el.disabled = true;
+      out.innerHTML = '<p class="muted">Testing…</p>';
+      try {
+        const t = await api.testDiscogs();
+        out.innerHTML = '<p><span class="key-status on">The key works</span>' + (t.username ? ' (Discogs account: ' + esc(t.username) + ')' : '') + '.</p>' +
+          (t.conditionPrices ? '<p><span class="key-status on">Values by condition are turned on.</span></p>'
+            : '<p><span class="key-status off">Values by condition are not available yet.</span> Fill in Seller Settings on Discogs (link below), then test again. Until then you’ll see the cheapest copy for sale.</p>');
+      } catch (e) { out.innerHTML = '<p><span class="key-status off">' + esc(e.message) + '</span></p>'; }
+      el.disabled = false;
+    }
   };
 
   document.addEventListener('click', e => {
     const nav = e.target.closest('[data-view]');
-    if (nav) { go(nav.dataset.view); return; }
+    if (nav) {
+      e.preventDefault();
+      if (S.view === 'edit' && S.edit && S.edit.dirty) {
+        confirmBox('Leave without saving your changes?', 'Yes, leave', 'No, stay here').then(ok => { if (ok) { S.edit = null; go(nav.dataset.view); } });
+        return;
+      }
+      if (S.view === 'edit') S.edit = null;
+      go(nav.dataset.view); return;
+    }
     const el = e.target.closest('[data-action]');
     if (!el || modalWrap.contains(el)) return;
     e.preventDefault();
@@ -810,8 +1001,8 @@
       const digits = c.replace(/\D/g, '');
       const tries = digits.length >= 8 && digits.length === c.replace(/[\s-]/g, '').length ? [{ barcode: digits }, { catno: c }] : [{ catno: c }, { text: c }];
       await runSearch(tries, 'Nothing was found for that number. Check it, or type the name instead.');
-    } else if (kind === 'manual') {
-      await saveManual(form);
+    } else if (kind === 'edit') {
+      await saveEditor();
     } else if (kind === 'discogs' || kind === 'claude') {
       const v = form.querySelector('input').value.trim();
       if (!v) { toast('Please paste the key first.', true); return; }
@@ -824,6 +1015,10 @@
 
   main.addEventListener('input', e => {
     if (e.target.id === 'q') { S.q = e.target.value; renderGrid(); }
+    if (S.view === 'edit' && e.target.closest('form[data-form="edit"]')) {
+      markDirty();
+      if (e.target.id === 'e-myValue') { S.edit.rec.myValue = e.target.value; refreshEditValue(); }
+    }
   });
   main.addEventListener('change', async e => {
     const t = e.target;

@@ -185,7 +185,7 @@ async function discogsFind(rec, token, http = request) {
   for (const t of tries) {
     const d = await getJSON(DISCOGS + '/database/search?type=release&per_page=5&' + t, { headers: discogsHeaders(token) }, http);
     const hit = d && d.results && d.results[0];
-    if (hit) return { id: String(hit.id), cover: hit.cover_image || '' };
+    if (hit) return { id: String(hit.id), cover: hit.cover_image || '', title: hit.title || '' };
   }
   return null;
 }
@@ -197,23 +197,69 @@ const GRADES = {
   g: 'Good (G)'
 };
 
+// Works out a value in up to three ways, best first:
+//  1. Discogs' suggested price for each condition (needs the account's Seller Settings filled in)
+//  2. the cheapest copy of this exact pressing for sale right now
+//  3. the cheapest copy of ANY pressing of the same album (Discogs "master release")
+// "note" records why something is missing, so the screen can explain it.
 async function prices(discogsId, token, http = request) {
-  const out = { nm: null, vgp: null, vg: null, g: null, lowest: null, forSale: null, currency: 'USD', checkedAt: new Date().toISOString() };
+  const out = { nm: null, vgp: null, vg: null, g: null, lowest: null, forSale: null, anyLowest: null, anyForSale: null,
+    currency: 'USD', checkedAt: new Date().toISOString(), note: '' };
+  const notes = [];
   const h = { headers: discogsHeaders(token) };
+  const id = encodeURIComponent(discogsId);
   try {
-    const s = await getJSON(DISCOGS + '/marketplace/price_suggestions/' + encodeURIComponent(discogsId), h, http);
+    const s = await getJSON(DISCOGS + '/marketplace/price_suggestions/' + id, h, http);
+    let any = false;
     if (s) for (const [k, label] of Object.entries(GRADES)) {
-      if (s[label] && typeof s[label].value === 'number') { out[k] = round(s[label].value); out.currency = s[label].currency || out.currency; }
+      const v = s[label] && s[label].value;
+      if (typeof v === 'number' && v > 0) { out[k] = round(v); out.currency = s[label].currency || out.currency; any = true; }
     }
-  } catch (e) { /* price suggestions need Discogs seller settings; fall back to market stats */ }
+    if (!any) notes.push('noSuggestions');
+  } catch (e) {
+    if (e.status === 401) throw e;
+    notes.push([403, 422].includes(e.status) ? 'needsSeller' : 'suggestFailed');
+  }
+  let masterId = null;
   try {
-    const st = await getJSON(DISCOGS + '/marketplace/stats/' + encodeURIComponent(discogsId) + '?curr_abbr=USD', h, http);
-    if (st) {
-      if (st.lowest_price && typeof st.lowest_price.value === 'number') out.lowest = round(st.lowest_price.value);
-      if (typeof st.num_for_sale === 'number') out.forSale = st.num_for_sale;
+    const rel = await getJSON(DISCOGS + '/releases/' + id + '?curr_abbr=USD', h, http);
+    if (rel) {
+      if (typeof rel.lowest_price === 'number' && rel.lowest_price > 0) out.lowest = round(rel.lowest_price);
+      if (typeof rel.num_for_sale === 'number') out.forSale = rel.num_for_sale;
+      masterId = rel.master_id || null;
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { if (e.status === 401) throw e; }
+  if (out.lowest == null) {
+    try {
+      const st = await getJSON(DISCOGS + '/marketplace/stats/' + id + '?curr_abbr=USD', h, http);
+      if (st && st.lowest_price && st.lowest_price.value > 0) out.lowest = round(st.lowest_price.value);
+      if (st && typeof st.num_for_sale === 'number') out.forSale = st.num_for_sale;
+    } catch (e) { /* ignore */ }
+  }
+  if (masterId) {
+    try {
+      const m = await getJSON(DISCOGS + '/masters/' + encodeURIComponent(masterId) + '?curr_abbr=USD', h, http);
+      if (m && typeof m.lowest_price === 'number' && m.lowest_price > 0) out.anyLowest = round(m.lowest_price);
+      if (m && typeof m.num_for_sale === 'number') out.anyForSale = m.num_for_sale;
+    } catch (e) { /* ignore */ }
+  }
+  if (!out.forSale && out.lowest == null) notes.push('noneForSale');
+  out.note = notes.join(',');
   return out;
+}
+
+// Settings › "Test my Discogs key": is the key accepted, and are condition prices available?
+async function testDiscogs(token, http = request) {
+  const me = await getJSON(DISCOGS + '/oauth/identity', { headers: discogsHeaders(token) }, http);
+  let conditionPrices = false, reason = '';
+  try {
+    const s = await getJSON(DISCOGS + '/marketplace/price_suggestions/1', { headers: discogsHeaders(token) }, http);
+    conditionPrices = !!(s && Object.keys(s).length);
+  } catch (e) {
+    if (e.status === 401) throw e;
+    reason = [403, 422].includes(e.status) ? 'needsSeller' : 'unknown';
+  }
+  return { username: (me && me.username) || '', conditionPrices, reason };
 }
 function round(n) { return Math.round(n * 100) / 100; }
 
@@ -257,4 +303,4 @@ function parseIdentify(reply) {
   return { artist: s(o.artist), title: s(o.title), year: s(o.year), label: s(o.label), catno: s(o.catalog_number), barcode: s(o.barcode), confidence: s(o.confidence) || 'low' };
 }
 
-module.exports = { request, search, details, coverUrls, download, discogsFind, prices, identifyPhoto, parseIdentify, buildQuery, mapRelease, msToTime, GRADES };
+module.exports = { request, search, details, coverUrls, download, discogsFind, prices, testDiscogs, identifyPhoto, parseIdentify, buildQuery, mapRelease, msToTime, GRADES };

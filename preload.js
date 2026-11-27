@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('shelf', {
   prices: rec => call('lookup:prices', rec),
   fetchCover: rec => call('lookup:cover', rec),
   saveSettings: s => call('settings:save', s),
+  testDiscogs: () => call('discogs:test'),
+  openLog: () => call('open:log'),
   backup: () => call('backup:make'),
   restore: () => call('backup:restore'),
   reportPdf: () => call('report:pdf'),

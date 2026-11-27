@@ -12,7 +12,7 @@
     { id: 'r2', list: 'collection', title: 'Three Rivers Blues', artist: 'Earl Mason Trio', year: '1959', label: 'Keystone', catno: 'K-118', haveCover: true, condition: 'vg', frontUrl: svg('#C2361F', '#16181D', '#F1E7D0'), prices: { nm: 140, vgp: 110, vg: 90, g: 30 }, tracks: [], credits: [], addedAt: new Date(now - 2000).toISOString() },
     { id: 'r3', list: 'collection', title: 'Sunday Drive', artist: 'Lucy Arden', year: '1972', label: 'Meadowlark', haveCover: false, condition: 'vgp', frontUrl: svg('#2F7D5B', '#3E9B72', '#F5B700'), prices: { vgp: 15 }, tracks: [], credits: [], addedAt: new Date(now - 3000).toISOString() },
     { id: 'r4', list: 'collection', title: 'Neon Boulevard', artist: 'The Satellites', year: '1981', haveCover: null, condition: 'nm', frontUrl: svg('#1B1035', '#E0457B', '#FFB347'), prices: null, tracks: [], credits: [], addedAt: new Date(now - 4000).toISOString() },
-    { id: 'r5', list: 'collection', title: 'Copper Canyon', artist: 'Dale Whitfield', year: '1975', haveCover: false, condition: 'g', prices: { g: 6 }, tracks: [], credits: [], addedAt: new Date(now - 5000).toISOString() },
+    { id: 'r5', list: 'collection', title: 'Copper Canyon', artist: 'Dale Whitfield', year: '1975', haveCover: false, condition: 'g', prices: { nm: 0, vgp: 0, vg: 0, g: 0, lowest: 0, forSale: 0, checkedAt: new Date().toISOString(), note: 'noneForSale' }, tracks: [], credits: [], addedAt: new Date(now - 5000).toISOString() },
     { id: 'r6', list: 'wish', title: 'Moonlight Sessions', artist: 'Ada Bell Quartet', year: '1962', frontUrl: svg('#101218', '#2B2F3A', '#F1E7D0'), prices: { vgp: 70 }, tracks: [], credits: [], addedAt: new Date(now - 6000).toISOString() }
   ];
   let settings = { textSize: 2, hasDiscogs: true, hasClaude: false, dataDir: 'C:\\Users\\Jim\\AppData\\Roaming\\Killion\'s Record Shelf' };
@@ -30,7 +30,9 @@
     details: async mbid => { await wait(400); return { mbid, title: 'Kind of Blue', artist: 'Miles Davis', year: '1959', label: 'Columbia', catno: 'CL 1355', country: 'US', format: '12" Vinyl', coverSource: 'auto',
       coverFront: 'f.jpg', frontUrl: svg('#0b2a5c', '#3a6fc4', '#ffffff'), discogsId: '1234', prices: { nm: 220, vgp: 120, vg: 70, g: 25 },
       tracks: [T('Side A', 'A1', 'So What', '9:22'), T('Side A', 'A2', 'Freddie Freeloader', '9:46'), T('Side B', 'B1', 'All Blues', '11:33')], credits: [{ role: 'Producer', name: 'Teo Macero' }] }; },
-    prices: async r => ({ prices: r.prices, discogsId: r.discogsId || '1' }),
+    prices: async r => { await wait(200); return { prices: { lowest: 21, forSale: 4, anyLowest: 9, anyForSale: 120, note: 'needsSeller', checkedAt: new Date().toISOString() }, discogsId: r.discogsId || '1' }; },
+    testDiscogs: async () => { await wait(200); return { username: 'killion', conditionPrices: false, reason: 'needsSeller' }; },
+    openLog: async () => true,
     fetchCover: async () => null,
     saveSettings: async s => { settings = { ...settings, ...s }; return settings; },
     backup: async () => null, restore: async () => null, reportPdf: async () => null, reportPrint: async () => true,

@@ -109,27 +109,56 @@ const MB_RELEASE = {
     const http = fakeHttp([
       ['price_suggestions/1234567', json({ 'Near Mint (NM or M-)': { currency: 'USD', value: 61.237 }, 'Very Good Plus (VG+)': { currency: 'USD', value: 44.5 },
         'Very Good (VG)': { currency: 'USD', value: 25 }, 'Good (G)': { currency: 'USD', value: 9.99 } })],
-      ['marketplace/stats/1234567', json({ lowest_price: { currency: 'USD', value: 30 }, num_for_sale: 12 })]
+      ['/releases/1234567', json({ lowest_price: 30, num_for_sale: 12, master_id: 77 })],
+      ['/masters/77', json({ lowest_price: 8, num_for_sale: 300 })]
     ]);
     const p = await L.prices('1234567', 'TOKEN', http);
     assert.strictEqual(p.nm, 61.24); assert.strictEqual(p.vgp, 44.5); assert.strictEqual(p.g, 9.99);
     assert.strictEqual(p.lowest, 30); assert.strictEqual(p.forSale, 12);
+    assert.strictEqual(p.anyLowest, 8); assert.strictEqual(p.anyForSale, 300);
+    assert.strictEqual(p.note, '');
     assert.strictEqual(http.calls[0].opts.headers.Authorization, 'Discogs token=TOKEN');
   });
 
-  await t('still gives the lowest price when suggestions are not allowed', async () => {
+  await t('without Seller Settings: falls back to cheapest copy and says why', async () => {
     const http = fakeHttp([
       ['price_suggestions', json({ message: 'You must fill out your seller settings first.' }, 422)],
-      ['marketplace/stats', json({ lowest_price: { currency: 'USD', value: 18.5 }, num_for_sale: 3 })]
+      ['/releases/55', json({ lowest_price: 18.5, num_for_sale: 3, master_id: 9 })],
+      ['/masters/9', json({ lowest_price: 4.99, num_for_sale: 80 })]
     ]);
     const p = await L.prices('55', 'T', http);
-    assert.strictEqual(p.vgp, null); assert.strictEqual(p.lowest, 18.5);
+    assert.strictEqual(p.vgp, null); assert.strictEqual(p.lowest, 18.5); assert.strictEqual(p.anyLowest, 4.99);
+    assert.ok(p.note.includes('needsSeller'));
+  });
+
+  await t('nothing for sale: uses any pressing of the same album', async () => {
+    const http = fakeHttp([
+      ['price_suggestions', json({})],
+      ['/releases/66', json({ lowest_price: null, num_for_sale: 0, master_id: 10 })],
+      ['marketplace/stats/66', json({ lowest_price: null, num_for_sale: 0 })],
+      ['/masters/10', json({ lowest_price: 12, num_for_sale: 41 })]
+    ]);
+    const p = await L.prices('66', 'T', http);
+    assert.strictEqual(p.lowest, null); assert.strictEqual(p.anyLowest, 12);
+    assert.ok(p.note.includes('noneForSale')); assert.ok(p.note.includes('noSuggestions'));
+  });
+
+  await t('a rejected Discogs key is reported, not hidden', async () => {
+    const http = fakeHttp([['price_suggestions', json({ message: 'Invalid consumer token' }, 401)]]);
+    await assert.rejects(L.prices('1', 'BAD', http), e => e.status === 401);
+  });
+
+  await t('tests the Discogs key and whether condition prices work', async () => {
+    const ok = await L.testDiscogs('T', fakeHttp([['oauth/identity', json({ username: 'killion' })], ['price_suggestions/1', json({ 'Mint (M)': { value: 5 } })]]));
+    assert.deepStrictEqual(ok, { username: 'killion', conditionPrices: true, reason: '' });
+    const no = await L.testDiscogs('T', fakeHttp([['oauth/identity', json({ username: 'killion' })], ['price_suggestions/1', json({}, 422)]]));
+    assert.deepStrictEqual(no, { username: 'killion', conditionPrices: false, reason: 'needsSeller' });
   });
 
   await t('finds the Discogs release by barcode', async () => {
     const http = fakeHttp([['database/search', json({ results: [{ id: 999, cover_image: 'https://i.discogs.com/a.jpg' }] })]]);
     const hit = await L.discogsFind({ barcode: '0123', artist: 'A', title: 'B' }, 'T', http);
-    assert.deepStrictEqual(hit, { id: '999', cover: 'https://i.discogs.com/a.jpg' });
+    assert.deepStrictEqual(hit, { id: '999', cover: 'https://i.discogs.com/a.jpg', title: '' });
     assert.ok(http.calls[0].url.includes('barcode=0123'));
   });
 
@@ -197,6 +226,22 @@ const MB_RELEASE = {
     const fresh = new Store(fs.mkdtempSync(path.join(os.tmpdir(), 'new-')), fakeCrypt);
     assert.strictEqual(fresh.restoreFrom(dest), s.all().length);
     assert.throws(() => fresh.restoreFrom(os.tmpdir()), /ENOENT|backup/);
+  });
+
+  await t('missing prices stay missing (no more $0)', () => {
+    const { sanitizeRecord } = require('../src/store');
+    const r = sanitizeRecord({ title: 'Elvis', prices: { nm: null, vgp: undefined, vg: '', g: 0, lowest: 0, forSale: 0, anyLowest: 7.5, note: 'needsSeller' } });
+    assert.deepStrictEqual([r.prices.nm, r.prices.vgp, r.prices.vg, r.prices.g, r.prices.lowest, r.prices.anyLowest], [null, null, null, null, null, 7.5]);
+    assert.strictEqual(r.prices.forSale, 0);
+    assert.strictEqual(r.prices.note, 'needsSeller');
+  });
+
+  await t('repairs $0 values saved by version 1.0.0 when loading', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'old-'));
+    fs.writeFileSync(path.join(d, 'records.json'), JSON.stringify({ version: 1, records: [{ id: 'a', title: 'Elvis', prices: { nm: 0, vgp: 0, vg: 0, g: 0, lowest: 0, forSale: 0 } }], settings: {}, secrets: {} }));
+    const s = new Store(d, fakeCrypt);
+    assert.strictEqual(s.all()[0].prices.vgp, null);
+    assert.strictEqual(s.all()[0].prices.lowest, null);
   });
 
   await t('survives a damaged save file by using the spare copy', () => {

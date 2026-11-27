@@ -22,7 +22,8 @@ class Store {
       try {
         const d = JSON.parse(fs.readFileSync(f, 'utf8'));
         if (d && Array.isArray(d.records)) {
-          return { ...EMPTY, ...d, settings: { ...EMPTY.settings, ...(d.settings || {}) }, secrets: d.secrets || {} };
+          // Re-clean every record on load (also repairs values saved as $0 by version 1.0.0).
+          return { ...EMPTY, ...d, records: d.records.map(sanitizeRecord), settings: { ...EMPTY.settings, ...(d.settings || {}) }, secrets: d.secrets || {} };
         }
       } catch (e) { /* try the backup copy next */ }
     }
@@ -149,7 +150,7 @@ class Store {
 }
 
 const STR = ['id', 'list', 'title', 'artist', 'year', 'label', 'catno', 'barcode', 'country', 'format', 'mbid', 'rgid',
-  'discogsId', 'coverFront', 'coverBack', 'userPhoto', 'coverSource', 'condition', 'notes', 'paid', 'addedAt'];
+  'discogsId', 'coverFront', 'coverBack', 'userPhoto', 'coverSource', 'condition', 'notes', 'paid', 'myValue', 'addedAt'];
 
 function sanitizeRecord(r) {
   const out = {};
@@ -161,13 +162,16 @@ function sanitizeRecord(r) {
     side: String(t.side || ''), pos: String(t.pos || ''), title: String(t.title || ''), length: String(t.length || '')
   })) : [];
   out.credits = Array.isArray(r.credits) ? r.credits.slice(0, 100).map(c => ({ role: String(c.role || ''), name: String(c.name || '') })) : [];
-  out.prices = r.prices && typeof r.prices === 'object' ? {
-    nm: num(r.prices.nm), vgp: num(r.prices.vgp), vg: num(r.prices.vg), g: num(r.prices.g),
-    lowest: num(r.prices.lowest), forSale: num(r.prices.forSale),
-    currency: String(r.prices.currency || 'USD').slice(0, 3), checkedAt: String(r.prices.checkedAt || '')
+  const p = r.prices;
+  out.prices = p && typeof p === 'object' ? {
+    nm: price(p.nm), vgp: price(p.vgp), vg: price(p.vg), g: price(p.g),
+    lowest: price(p.lowest), forSale: num(p.forSale), anyLowest: price(p.anyLowest), anyForSale: num(p.anyForSale),
+    currency: String(p.currency || 'USD').slice(0, 3), checkedAt: String(p.checkedAt || ''), note: String(p.note || '').slice(0, 200)
   } : null;
   return out;
 }
-function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+// Missing must stay missing: Number(null) is 0, which showed up as "$0".
+function num(v) { if (v === null || v === undefined || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+function price(v) { const n = num(v); return n !== null && n > 0 ? n : null; }
 
 module.exports = { Store, sanitizeRecord };

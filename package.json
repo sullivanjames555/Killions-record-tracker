@@ -1,7 +1,7 @@
 {
   "name": "killions-record-shelf",
   "productName": "Killion's Record Shelf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A large-print record collection app: covers, sleeve info and values, made easy.",
   "main": "main.js",
   "author": "James Sullivan",

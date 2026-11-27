@@ -92,6 +92,15 @@ function dataUrlToBuffer(dataUrl) {
   return { buffer: Buffer.from(m[2], 'base64'), ext: m[1] === 'jpeg' ? 'jpg' : m[1] };
 }
 
+// A small diary of look-up problems, for troubleshooting: %APPDATA%\Killion's Record Shelf\lookup.log
+function log(msg) {
+  try {
+    const f = path.join(store.dataDir, 'lookup.log');
+    if (fs.existsSync(f) && fs.statSync(f).size > 512 * 1024) fs.renameSync(f, f + '.old');
+    fs.appendFileSync(f, new Date().toISOString() + '  ' + msg + '\r\n');
+  } catch (e) { /* never let logging break anything */ }
+}
+
 function friendly(e) {
   const msg = (e && e.message) || String(e);
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|took too long/i.test(msg)) {
@@ -113,14 +122,25 @@ function handle(channel, fn) {
 async function getPrices(rec) {
   const token = store.getSecret('discogsToken');
   if (!token) return { prices: null, discogsId: rec.discogsId || '' };
+  const label = '"' + (rec.artist || '') + ' - ' + (rec.title || '') + '"';
   let id = rec.discogsId;
   let cover = '';
-  if (!id) {
-    const hit = await lookup.discogsFind(rec, token);
-    if (hit) { id = hit.id; cover = hit.cover; }
+  try {
+    if (!id) {
+      const hit = await lookup.discogsFind(rec, token);
+      if (hit) { id = hit.id; cover = hit.cover; log('Discogs match for ' + label + ': release ' + id + ' (' + hit.title + ')'); }
+    }
+    if (!id) {
+      log('Discogs: no match found for ' + label);
+      return { prices: { checkedAt: new Date().toISOString(), note: 'noMatch' }, discogsId: '' };
+    }
+    const p = await lookup.prices(id, token);
+    log('Discogs value for ' + label + ' (release ' + id + '): ' + JSON.stringify(p));
+    return { prices: p, discogsId: id, discogsCover: cover };
+  } catch (e) {
+    log('Discogs error for ' + label + ': ' + (e.status || '') + ' ' + e.message + (e.detail ? ' ' + JSON.stringify(e.detail) : ''));
+    throw e;
   }
-  if (!id) return { prices: null, discogsId: '' };
-  return { prices: await lookup.prices(id, token), discogsId: id, discogsCover: cover };
 }
 
 function registerIpc() {
@@ -154,6 +174,7 @@ function registerIpc() {
     const covers = await lookup.coverUrls(d.mbid, d.rgid);
     let priceInfo = { prices: null, discogsId: d.discogsId };
     try { priceInfo = await getPrices(d); } catch (e) { priceInfo.priceError = friendly(e); }
+    log('Looked up ' + d.artist + ' - ' + d.title + ' (MusicBrainz ' + d.mbid + ')');
     if (!covers.front && priceInfo.discogsCover) covers.front = priceInfo.discogsCover;
     const out = { ...d, discogsId: priceInfo.discogsId || d.discogsId, prices: priceInfo.prices, priceError: priceInfo.priceError || '' };
     for (const side of ['front', 'back']) {
@@ -189,6 +210,19 @@ function registerIpc() {
   });
 
   handle('settings:save', s => store.setSettings(s || {}));
+
+  handle('discogs:test', async () => {
+    const token = store.getSecret('discogsToken');
+    if (!token) throw new Error('There is no Discogs key saved yet.');
+    const r = await lookup.testDiscogs(token);
+    log('Discogs key test: ' + JSON.stringify(r));
+    return r;
+  });
+  handle('open:log', () => {
+    const f = path.join(store.dataDir, 'lookup.log');
+    if (!fs.existsSync(f)) fs.writeFileSync(f, '');
+    return shell.openPath(f);
+  });
 
   handle('backup:make', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Choose where to save the backup (a USB stick is ideal)', properties: ['openDirectory', 'createDirectory'] });
