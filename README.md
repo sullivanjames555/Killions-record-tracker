@@ -2,9 +2,10 @@
 
 A large-print record collection program for Windows 8, 8.1, 10 and 11.
 
-- **Add a record** by dragging in a photo of the cover, choosing one from the computer, holding it up to the webcam, typing the name, or typing the barcode or catalog number.
-- **Covers are fetched automatically** (front and back) from the free Cover Art Archive. Your own photo is used if there isn't one, and you can swap pictures at any time.
-- **"Do I have the cover?"** Every record is marked Have cover / Need cover. Use the *Need a cover* filter as a shopping list.
+- **Add a record** by dragging in a photo of the picture sleeve, choosing one from the computer, holding it up to the webcam, typing the name, or typing the barcode or catalog number.
+- **Import a list**: bring in a CSV saved from Excel, Google Sheets or a Discogs collection export. Every record is looked up automatically (see below).
+- **Sleeve pictures are fetched automatically** (front and back) from the free Cover Art Archive. Your own photo is used if there isn't one, and you can swap pictures at any time.
+- **"Do I have the picture sleeve?"** Every record is marked Have picture sleeve / Need picture sleeve. Use the *Need a picture sleeve* filter as a shopping list.
 - **Sleeve info**: songs by side, running times, label, catalog number, country, producer and other credits (from MusicBrainz).
 - **Value** for the record's condition from real Discogs sales, with one-click links to Discogs and eBay sold listings.
 - **Wish list**, **value report** (print, PDF or spreadsheet), **read aloud**, **three text sizes**, and **backup to a USB stick**.
@@ -27,7 +28,7 @@ To publish a release: on GitHub open **Releases → Draft a new release**, type 
 2. Unzip this folder somewhere, for example `Documents\record-shelf`.
 3. Double-click **`Build-Installer.bat`**.
    The first run downloads the building blocks (a few minutes), runs the self-tests, then builds the installer.
-4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.1.0.exe`**.
+4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.2.0.exe`**.
 
 That one installer works on Windows 8, 8.1, 10 and 11, in both 32-bit and 64-bit versions.
 
@@ -35,7 +36,7 @@ To try the program without installing it, double-click **`Try-Without-Installing
 
 ## 2. Install it on the record collector's computer
 
-Copy `Killions-Record-Shelf-Setup-1.1.0.exe` over (on a USB stick, for example) and double-click it.
+Copy `Killions-Record-Shelf-Setup-1.2.0.exe` over (on a USB stick, for example) and double-click it.
 It installs without asking any questions, puts **Killion's Record Shelf** on the desktop and in the Start menu, and opens it.
 
 **"Windows protected your PC"**: Windows shows this for any program that isn't code-signed. Click **More info** and then **Run anyway**.
@@ -59,11 +60,21 @@ The app looks for a value in this order, and labels which one it is showing:
 If none of these exist, the record shows the reason instead of a price. To check every record again, use **Update all values** on the Value report page.
 Each look-up is written to `lookup.log` in the data folder (Settings → *Open the look-up log*), which shows exactly what Discogs answered.
 
+## Importing a list he already has
+
+1. In Excel use **File › Save As › CSV**, or in Google Sheets use **File › Download › CSV**. Put one record on each row.
+2. In the app, press **Import a list** and choose the file, or drag it in.
+3. Check the column guesses. Any column names work, such as *Artist / Band*, *Album / Title*, *Year*, *Label*, *Cat #*, *Barcode*, *Condition*, *Picture sleeve*, *Notes* and *Price paid*. A Discogs collection export is recognised as it is.
+4. Press **Import**. Every row is saved immediately, then looked up one by one for songs, details, sleeve pictures and, if a Discogs key is set, its value.
+   - The look-up takes about 4 seconds a record, or about 9 with values. You can keep using the app, or press **Stop for now** and **Continue** another day.
+   - Barcodes and catalog numbers give the surest matches. A record that can't be matched for sure keeps what was in the list and is marked **Check this one**. Open it, press **Edit all the details**, then **Find this record online**.
+   - Records already on the shelf are skipped.
+
 ## 4. Optional: read photos automatically
 
-With an **Anthropic API key** (from the Claude Console), a photo of the cover is enough. Claude reads the artist, title, catalog number and barcode, and the app finds the record.
+With an **Anthropic API key** (from the Claude Console), a photo of the picture sleeve is enough. Claude reads the artist, title, catalog number and barcode, and the app finds the record.
 Each photo costs a small amount, usually around a cent. Paste the key under *Read photos automatically* in Settings.
-Without a key, photos are still saved as covers and you type the name or barcode instead.
+Without a key, photos are still saved as sleeve pictures and you type the name or barcode instead.
 
 Keys are encrypted with Windows' own data protection (DPAPI), stay on that computer, and are never copied into backups.
 
@@ -72,7 +83,7 @@ Keys are encrypted with Windows' own data protection (DPAPI), stay on that compu
 `%APPDATA%\Killion's Record Shelf\`
 - `lookup.log`: what each value look-up found, for troubleshooting.
 - `records.json`: the collection. A spare copy, `records.json.bak`, is kept automatically.
-- `covers\`: the cover pictures.
+- `covers\`: the sleeve pictures.
 
 Use **Settings → Back up my collection** to copy everything to a USB stick, and **Restore from a backup** on a new computer.
 

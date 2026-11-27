@@ -11,6 +11,7 @@ async function call(channel, ...args) {
 contextBridge.exposeInMainWorld('shelf', {
   load: () => call('data:load'),
   saveRecord: rec => call('record:save', rec),
+  addMany: list => call('records:addMany', list),
   deleteRecord: id => call('record:delete', id),
   saveImage: dataUrl => call('cover:saveImage', dataUrl),
   search: params => call('lookup:search', params),

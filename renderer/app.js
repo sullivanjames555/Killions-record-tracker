@@ -19,8 +19,11 @@
   const S = {
     records: [], settings: {}, version: '',
     view: 'records', selId: null, filter: 'all', sort: 'recent', q: '', side: 'front',
-    add: freshAdd(), pickTarget: null
+    add: freshAdd(), pickTarget: null, imp: freshImp()
   };
+  function freshImp() {
+    return { stage: 'pick', fileName: '', rows: [], hasHeader: true, map: {}, list: 'collection', values: true, skipDupes: true, run: null };
+  }
   function freshAdd() {
     return { stage: 'start', photo: null, back: null, matches: [], draft: null, msg: '', name: '', code: '', forList: 'collection' };
   }
@@ -169,6 +172,7 @@
     const z = e.target.closest && e.target.closest('[data-drop]');
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (!z || !f) return;
+    if (z.dataset.drop === 'csv') { loadCsvFile(f); return; }
     try {
       const dataUrl = await readImage(f);
       if (z.dataset.drop === 'front') onFrontPhoto(dataUrl);
@@ -186,7 +190,7 @@
       return;
     }
     const stop = () => stream.getTracks().forEach(t => t.stop());
-    const p = modal('<h2>Hold the cover up to the camera</h2><div class="camera"><video autoplay playsinline muted></video>' +
+    const p = modal('<h2>Hold the picture sleeve up to the camera</h2><div class="camera"><video autoplay playsinline muted></video>' +
       '<p class="muted">Fill the screen with the front of the sleeve, then press the yellow button.</p>' +
       '<div class="row"><button class="btn yellow tall" data-modal="snap">' + icon.camera + 'Take the picture</button>' +
       '<button class="btn" data-modal="cancel">Cancel</button></div></div>', { wide: true, onClose: () => {} });
@@ -231,6 +235,7 @@
 
   // ---------------- navigation ----------------
   function go(view) {
+    if (view !== 'add' && S.add.stage === 'loading') { ticket++; S.add.busy = false; S.add.stage = S.add.matches.length ? 'matches' : 'start'; }
     S.view = view;
     const navView = view === 'edit' && S.edit ? (S.edit.isNew ? 'add' : (S.edit.rec.list === 'wish' ? 'wish' : 'records')) : view;
     document.querySelectorAll('.nav-btn').forEach(b => {
@@ -242,6 +247,7 @@
     if (view === 'records' || view === 'wish') renderShelf();
     else if (view === 'add') renderAdd();
     else if (view === 'edit' && S.edit) renderEdit();
+    else if (view === 'import') renderImport();
     else if (view === 'report') renderReport();
     else if (view === 'settings') renderSettings();
     else if (view === 'help') renderHelp();
@@ -258,6 +264,7 @@
     let rs = listRecords().filter(r => {
       if (S.view === 'records' && S.filter === 'have' && r.haveCover !== true) return false;
       if (S.view === 'records' && S.filter === 'need' && r.haveCover !== false) return false;
+      if (S.view === 'records' && S.filter === 'check' && r.importStatus !== 'notFound' && r.importStatus !== 'pending') return false;
       if (!q) return true;
       return [r.title, r.artist, r.label, r.year, r.catno, r.notes].join(' ').toLowerCase().includes(q);
     });
@@ -282,7 +289,7 @@
         '<div class="empty"><div class="disc spin" aria-hidden="true"></div>' +
         '<h2>' + (wish ? 'Your wish list is empty' : 'Your shelf is empty') + '</h2>' +
         '<p>' + (wish ? 'When you find a record you would like to own, press "Add to my wish list" and it will wait for you here.'
-          : 'Add your first record. A photo of the cover, the barcode or just the name is enough.') + '</p>' +
+          : 'Add your first record. A photo of the picture sleeve, the barcode or just the name is enough.') + '</p>' +
         '<button class="btn yellow tall" data-action="go-add" data-list="' + (wish ? 'wish' : 'collection') + '">' + icon.plus +
         (wish ? 'Add to my wish list' : 'Add a record') + '</button></div>';
       return;
@@ -290,12 +297,15 @@
     const sub = wish
       ? all.length + (all.length === 1 ? ' record' : ' records') + ' I would like to find'
       : all.length + (all.length === 1 ? ' record' : ' records') + (total ? ' · worth about <strong>' + esc(money(total)) + '</strong>' : '') +
-        (need ? ' · <strong class="need-count">' + need + ' still need a cover</strong>' : '');
-    const chips = wish ? '' : [['all', 'All records'], ['have', 'Have cover'], ['need', 'Need a cover (' + need + ')']]
+        (need ? ' · <strong class="need-count">' + need + ' still need a picture sleeve</strong>' : '');
+    const toCheck = all.filter(r => r.importStatus === 'notFound' || r.importStatus === 'pending').length;
+    if (S.filter === 'check' && !toCheck) S.filter = 'all';
+    const chips = wish ? '' : [['all', 'All records'], ['have', 'Have picture sleeve'], ['need', 'Need a picture sleeve (' + need + ')']].concat(toCheck ? [['check', 'Needs checking (' + toCheck + ')']] : [])
       .map(([id, l]) => '<button class="chip" data-action="filter" data-id="' + id + '" aria-pressed="' + (S.filter === id) + '">' + esc(l) + '</button>').join('');
     main.innerHTML =
       '<div class="page-head"><div><h1>' + (wish ? 'Wish list' : 'My Records') + '</h1><div class="sub">' + sub + '</div></div>' +
       '<label class="search">' + icon.search + '<span hidden>Find a record</span><input id="q" type="search" placeholder="Find a record or artist" value="' + esc(S.q) + '" aria-label="Find a record or artist"></label></div>' +
+      importBanner() +
       '<div class="shelf"><section class="shelf-list"><div class="toolbar">' + chips +
       '<div class="sort"><label for="sort" class="label">Sort by</label><select id="sort" class="input">' +
       [['recent', 'Newest first'], ['artist', 'Artist A–Z'], ['title', 'Title A–Z'], ['value', 'Most valuable'], ['year', 'Oldest first']]
@@ -305,15 +315,29 @@
     renderGrid();
   }
 
+  function importBanner() {
+    const R = S.imp.run;
+    if (R && S.imp.stage === 'run') {
+      return '<div class="banner"><span class="disc mini" aria-hidden="true"></span><span>Looking up your imported list: <strong>' + R.i + ' of ' + R.ids.length + '</strong></span><button class="btn" data-view="import">Show progress</button></div>';
+    }
+    const n = pendingIds().length;
+    return n ? '<div class="banner"><span><strong>' + n + ' imported ' + (n === 1 ? 'record' : 'records') + '</strong> still ' + (n === 1 ? 'needs' : 'need') + ' looking up.</span><button class="btn yellow" data-action="imp-continue">' + icon.refresh + 'Continue looking up</button></div>' : '';
+  }
+
   function coverImg(r, cls) {
     const u = safeUrl(r.frontUrl || r.photoUrl);
     return u ? '<img class="' + cls + '" src="' + esc(u) + '" alt="" loading="lazy">' : '<div class="' + cls + ' cover-blank" aria-hidden="true"></div>';
   }
   function badge(r) {
+    const check = r.importStatus === 'notFound' ? '<span class="badge check">' + icon.search + 'Check this one</span>'
+      : r.importStatus === 'pending' ? '<span class="badge unknown">Not looked up yet</span>' : '';
+    return check + sleeveBadge(r);
+  }
+  function sleeveBadge(r) {
     if (r.list === 'wish') return '';
-    if (r.haveCover === true) return '<span class="badge have">' + icon.check + 'Have cover</span>';
-    if (r.haveCover === false) return '<span class="badge need">' + icon.box + 'Need cover</span>';
-    return '<span class="badge unknown">Cover: not marked</span>';
+    if (r.haveCover === true) return '<span class="badge have">' + icon.check + 'Have picture sleeve</span>';
+    if (r.haveCover === false) return '<span class="badge need">' + icon.box + 'Need picture sleeve</span>';
+    return '<span class="badge unknown">Picture sleeve: not marked</span>';
   }
 
   function renderGrid() {
@@ -377,15 +401,16 @@
     box.innerHTML =
       '<div class="big-cover" data-key="' + esc(r.id + S.side) + '">' + coverBlock + '</div>' +
       '<div class="seg" role="group" aria-label="Which side of the sleeve">' +
-      '<button data-action="side" data-id="front" aria-pressed="' + (S.side === 'front') + '">Front cover</button>' +
-      '<button data-action="side" data-id="back" aria-pressed="' + (S.side === 'back') + '">Back cover</button></div>' +
+      '<button data-action="side" data-id="front" aria-pressed="' + (S.side === 'front') + '">Front of sleeve</button>' +
+      '<button data-action="side" data-id="back" aria-pressed="' + (S.side === 'back') + '">Back of sleeve</button></div>' +
       '<div class="pic-line"><span>' + esc(picNote) + '</span><span class="row">' +
       (!showUrl && r.mbid ? '<button class="btn" data-action="find-cover" data-id="' + esc(r.id) + '">' + icon.refresh + 'Find the picture</button>' : '') +
       '<button class="btn" data-action="own-photo" data-id="' + esc(r.id) + '">' + icon.folder + 'Use my own photo</button></span></div>' +
-      (inCollection ? '<fieldset class="box"><legend>Do I have the cover for this record?</legend><div class="choice-grid">' +
+      (inCollection ? '<fieldset class="box"><legend>Do I have the picture sleeve for this record?</legend><div class="choice-grid">' +
         '<button class="choice have" data-action="have" data-id="' + esc(r.id) + '" data-v="yes" aria-pressed="' + (r.haveCover === true) + '">Yes, I have it</button>' +
         '<button class="choice need" data-action="have" data-id="' + esc(r.id) + '" data-v="no" aria-pressed="' + (r.haveCover === false) + '">No, I need one</button></div></fieldset>' : '') +
       '<div><h2 class="rec-title">' + esc(r.title || 'Untitled') + '</h2><div class="rec-artist">' + esc(r.artist) + '</div><div class="rec-meta">' + esc(meta) + '</div></div>' +
+      (r.importStatus === 'notFound' ? '<p class="check-note">This came from your list but wasn’t found online for sure. Press “Edit all the details”, then “Find this record online”.</p>' : '') +
       '<button class="btn blue-line tall" data-action="edit" data-id="' + esc(r.id) + '">' + icon.pencil + 'Edit all the details</button>' +
       (inCollection ? '<fieldset class="box"><legend>What shape is the record in?</legend><div class="choice-grid">' +
         COND.map(c => '<button class="choice" data-action="condition" data-id="' + esc(r.id) + '" data-v="' + c.id + '" aria-pressed="' + ((r.condition || 'vgp') === c.id) + '">' + c.label + '</button>').join('') +
@@ -408,8 +433,9 @@
     try {
       const img = await api.saveImage(dataUrl);
       const r = S.edit.rec;
-      if (side === 'back') { r.coverBack = img.name; r.backUrl = img.url; }
-      else { r.coverFront = img.name; r.frontUrl = img.url; r.coverSource = 'photo'; }
+      if (side === 'back') { r.coverBack = img.name; r.backUrl = img.url; S.edit.userPickedBack = true; }
+      else { r.coverFront = img.name; r.frontUrl = img.url; r.coverSource = 'photo'; S.edit.userPickedFront = true; }
+      if (S.edit.pending) S.edit.pending.cover = false;
       markDirty();
       const c = document.getElementById('e-covers'); if (c) c.innerHTML = editCoversHtml(r);
     } catch (e) { toast(e.message, true); }
@@ -437,8 +463,8 @@
       (r.title || 'This record') + (r.artist ? ', by ' + r.artist + '.' : '.'),
       r.year ? 'Released in ' + r.year + (r.label ? ' on ' + r.label : '') + '.' : (r.label ? 'On ' + r.label + '.' : ''),
       amt != null ? 'It is worth about ' + money(amt) + '.' : '',
-      r.list !== 'wish' && r.haveCover === true ? 'You have the cover.' : '',
-      r.list !== 'wish' && r.haveCover === false ? 'You still need a cover for this one.' : ''
+      r.list !== 'wish' && r.haveCover === true ? 'You have the picture sleeve.' : '',
+      r.list !== 'wish' && r.haveCover === false ? 'You still need a picture sleeve for this one.' : ''
     ];
     if (r.tracks && r.tracks.length) {
       let side = null;
@@ -465,26 +491,27 @@
     const a = S.add;
     const wish = a.forList === 'wish';
     const front = a.photo
-      ? '<img class="preview" src="' + esc(a.photo.dataUrl) + '" alt="Your photo of the cover"><div class="drop-title">Got your photo</div>' +
+      ? '<img class="preview" src="' + esc(a.photo.dataUrl) + '" alt="Your photo of the picture sleeve"><div class="drop-title">Got your photo</div>' +
         '<button class="btn" data-action="pick-photo">' + icon.folder + 'Use a different photo</button>'
-      : '<div class="sleeve-art bob" aria-hidden="true"></div><div class="drop-title">Drag a photo of the cover here</div><div class="muted">or</div>' +
+      : '<div class="sleeve-art bob" aria-hidden="true"></div><div class="drop-title">Drag a photo of the picture sleeve here</div><div class="muted">or</div>' +
         '<div class="row" style="justify-content:center"><button class="btn primary tall" data-action="pick-photo">' + icon.folder + 'Choose a photo on my computer</button>' +
         '<button class="btn blue-line tall" data-action="webcam">' + icon.camera + 'Use my webcam</button></div>';
     main.innerHTML =
       '<div class="page-head"><div><h1>' + (wish ? 'Add to my wish list' : 'Add a record') + '</h1>' +
-      '<div class="sub">Show us the cover and we’ll fill in the rest.</div></div>' +
+      '<div class="sub">Show us the picture sleeve and we’ll fill in the rest.</div></div>' +
       '<div class="seg" role="group" aria-label="Where should it go" style="min-width: 22rem">' +
       '<button data-action="for-list" data-id="collection" aria-pressed="' + !wish + '">I own it</button>' +
       '<button data-action="for-list" data-id="wish" aria-pressed="' + wish + '">I want it</button></div></div>' +
       '<div class="add-wrap"><section class="add-left">' +
-      '<div class="step"><div class="step-num' + (a.photo ? ' done' : '') + '">1</div><h2>Show us the front cover</h2></div>' +
+      '<div class="step"><div class="step-num' + (a.photo ? ' done' : '') + '">1</div><h2>Show us the front of the sleeve</h2></div>' +
       '<div class="drop" data-drop="front">' + front + '</div>' +
       '<div class="back-slot" data-drop="back">' +
       (a.back ? '<img class="thumb" src="' + esc(a.back.dataUrl) + '" alt="Your photo of the back">' : '<div class="thumb" aria-hidden="true"></div>') +
-      '<div style="flex:1"><div style="font-weight:700">' + (a.back ? 'Back cover added' : 'Add the back cover too (optional)') + '</div>' +
+      '<div style="flex:1"><div style="font-weight:700">' + (a.back ? 'Back of sleeve added' : 'Add the back of the sleeve too (optional)') + '</div>' +
       '<div class="small muted">Helps if we can’t find a picture of the back.</div></div>' +
       '<button class="btn" data-action="pick-back">' + (a.back ? 'Change' : 'Add photo') + '</button></div>' +
-      '<div class="label muted" style="margin-top:.3rem">No photo? Try another way — we’ll find the cover picture for you</div>' +
+      '<button class="btn blue-line wide" data-view="import">' + '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16"/></svg>' + 'Have a whole list already? Import it from a spreadsheet</button>' +
+      '<div class="label muted" style="margin-top:.3rem">No photo? Try another way — we’ll find the sleeve picture for you</div>' +
       '<div class="other-ways">' +
       '<form class="way" data-form="name"><label for="nameq" class="label">Type the name</label>' +
       '<input id="nameq" class="input" value="' + esc(a.name) + '" placeholder="Artist and album" autocomplete="off">' +
@@ -500,7 +527,7 @@
     switch (a.stage) {
       case 'identifying': return loader('Looking at your photo…');
       case 'searching': return loader('Searching for your record…');
-      case 'loading': return loader('Getting the cover, songs and value…');
+      case 'loading': return loader('Getting the songs and details…');
       case 'needName':
         return '<div class="step"><div class="step-num">2</div><h2>Now tell us the name</h2></div>' +
           '<p style="font-size:1.1rem;margin:0">' + esc(a.msg || 'We saved your photo.') + '</p>' +
@@ -522,7 +549,7 @@
       default:
         return '<div class="step"><div class="step-num">2</div><h2>Check it’s right</h2></div>' +
           '<div class="empty" style="padding:1.5rem .5rem"><div class="disc" aria-hidden="true" style="width:6rem;height:6rem"></div>' +
-          '<p>Your record will show up here with its cover, songs and value.</p></div>';
+          '<p>Your record will show up here with its sleeve picture, songs and value.</p></div>';
     }
   }
 
@@ -568,14 +595,49 @@
     } catch (e) { setStage('error', { msg: e.message }); }
   }
 
+  // Choosing an album: get the songs and details (one quick look-up), open the form at once,
+  // then fill in the sleeve pictures and the value while the person is reading it.
+  // A "ticket" makes sure a slow answer can never jump in after they have moved on.
+  let ticket = 0;
   async function pickMatch(mbid) {
+    if (S.add.busy) return;
+    S.add.busy = true;
+    const mine = ++ticket;
     setStage('loading');
     try {
       const d = await api.details(mbid);
+      if (mine !== ticket || S.view !== 'add') return;
       const rec = { ...d, list: S.add.forList, condition: 'vgp', haveCover: null };
       await attachAddPhotos(rec);
+      if (mine !== ticket || S.view !== 'add') return;
       openEditor(rec, { isNew: true, fromLookup: true });
-    } catch (e) { setStage('error', { msg: e.message }); }
+      fillInBackground();
+    } catch (e) {
+      if (mine === ticket && S.view === 'add') setStage('error', { msg: e.message });
+    } finally { S.add.busy = false; }
+  }
+
+  function fillInBackground() {
+    const E = S.edit;
+    if (!E) return;
+    const r = E.rec;
+    E.pending = { cover: !!(r.mbid || S.settings.hasDiscogs), value: !!S.settings.hasDiscogs };
+    refreshEditCovers(); refreshEditValue();
+    if (E.pending.cover) {
+      api.fetchCover(r).then(c => {
+        if (S.edit !== E) return;
+        if (c && c.coverFront && !E.userPickedFront) { r.coverFront = c.coverFront; r.frontUrl = c.frontUrl; r.coverSource = 'auto'; }
+        if (c && c.coverBack && !E.userPickedBack) { r.coverBack = c.coverBack; r.backUrl = c.backUrl; }
+        if (c && c.discogsId && !r.discogsId) r.discogsId = c.discogsId;
+      }).catch(() => {}).finally(() => { if (S.edit === E) { E.pending.cover = false; refreshEditCovers(); } });
+    }
+    if (E.pending.value) {
+      api.prices(r).then(p => {
+        if (S.edit !== E) return;
+        r.prices = p.prices; r.discogsId = p.discogsId || r.discogsId;
+      }).catch(e => { if (S.edit === E) r.priceError = e.message; })
+        .finally(() => { if (S.edit === E) { E.pending.value = false; refreshEditValue(); } });
+    }
   }
 
   // Photos taken on the Add page become the record's pictures (unless a cleaner one was found online).
@@ -620,20 +682,25 @@
     });
   }
 
+  function refreshEditCovers() { const c = document.getElementById('e-covers'); if (c && S.edit) c.innerHTML = editCoversHtml(S.edit.rec); }
   function editCoversHtml(r) {
+    if (S.edit && S.edit.pending && S.edit.pending.cover) {
+      return '<div class="label">Picture sleeve</div><div class="cover cover-wait"><div class="disc" aria-hidden="true"></div><div>Finding the sleeve pictures…</div></div>';
+    }
     const front = safeUrl(r.frontUrl || r.photoUrl), back = safeUrl(r.backUrl);
     const src = r.coverSource === 'photo' ? 'Your own photo' : (r.frontUrl ? 'Found automatically' : '');
-    return '<div class="label">Front cover</div>' +
-      (front ? '<img class="cover" src="' + esc(front) + '" alt="Front cover">' : '<div class="cover cover-blank" aria-hidden="true"></div>') +
+    return '<div class="label">Front of sleeve</div>' +
+      (front ? '<img class="cover" src="' + esc(front) + '" alt="Front of sleeve">' : '<div class="cover cover-blank" aria-hidden="true"></div>') +
       (src ? '<div class="small muted">' + esc(src) + '</div>' : '') +
       '<div class="row">' + '<button class="btn" type="button" data-action="edit-photo" data-side="front">' + icon.folder + (front ? 'Change picture' : 'Add a picture') + '</button>' +
       (!front && r.mbid ? '<button class="btn" type="button" data-action="edit-find-cover">' + icon.refresh + 'Find it for me</button>' : '') + '</div>' +
-      '<div class="label" style="margin-top:.6rem">Back cover</div>' +
-      (back ? '<img class="cover back-cover" src="' + esc(back) + '" alt="Back cover">' : '<div class="cover cover-blank back-cover" aria-hidden="true"></div>') +
+      '<div class="label" style="margin-top:.6rem">Back of sleeve</div>' +
+      (back ? '<img class="cover back-cover" src="' + esc(back) + '" alt="Back of sleeve">' : '<div class="cover cover-blank back-cover" aria-hidden="true"></div>') +
       '<div class="row"><button class="btn" type="button" data-action="edit-photo" data-side="back">' + icon.folder + (back ? 'Change picture' : 'Add a picture') + '</button></div>';
   }
 
   function editValueHtml(r) {
+    if (S.edit && S.edit.pending && S.edit.pending.value) return '<div class="value-box"><div class="lbl">Value</div><div class="wait-line"><span class="disc mini" aria-hidden="true"></span>Checking the value on Discogs…</div></div>';
     const v = valueInfo(r);
     return '<div class="value-box"><div class="lbl">' + esc(v ? v.label : 'Value') + '</div>' +
       (v ? '<div class="amt">' + esc(money(v.amount)) + '</div>' : '') +
@@ -656,14 +723,17 @@
       '<div class="editor-grid">' +
       '<section class="edit-covers" id="e-covers">' + editCoversHtml(r) + '</section>' +
       '<div class="edit-main">' +
-      '<section class="edit-section"><h2>About the record</h2><div class="fields">' +
+      '<section class="edit-section"><div class="row" style="justify-content:space-between"><h2>About the record</h2>' +
+      '<button class="btn blue-line" type="button" data-action="edit-find-online">' + icon.search + (r.mbid ? 'Look it up again online' : 'Find this record online') + '</button></div>' +
+      (r.importStatus === 'notFound' ? '<p class="check-note">This record came from your list but wasn’t found online automatically. Check the name and artist, then press “Find this record online”.</p>' : '') +
+      '<div class="fields">' +
       field('title', 'Album name', r.title, 'For example: Elvis', true) + field('artist', 'Artist or band', r.artist, 'For example: Elvis Presley', true) +
       field('year', 'Year', r.year, 'For example: 1956') + field('country', 'Country', r.country, 'For example: US') +
       field('label', 'Record label', r.label, 'For example: RCA Victor') + field('catno', 'Catalog number', r.catno, 'On the spine or centre label') +
       field('barcode', 'Barcode', r.barcode, 'Newer records only') + field('format', 'Format', r.format, 'For example: 12" Vinyl') +
       '</div></section>' +
       '<section class="edit-section"><h2>Where does it go?</h2>' + choiceGroup('list', [['collection', 'My records'], ['wish', 'My wish list']], r.list || 'collection') + '</section>' +
-      '<section class="edit-section" id="e-cover-q"' + (r.list === 'wish' ? ' hidden' : '') + '><h2>Do I have the cover for this record?</h2>' +
+      '<section class="edit-section" id="e-cover-q"' + (r.list === 'wish' ? ' hidden' : '') + '><h2>Do I have the picture sleeve for this record?</h2>' +
       choiceGroup('haveCover', [['true', 'Yes, I have it', 'have'], ['false', 'No, I need one', 'need'], ['null', 'Not sure']], r.haveCover === true ? 'true' : r.haveCover === false ? 'false' : 'null') + '</section>' +
       '<section class="edit-section"><h2>What shape is the record in?</h2>' + choiceGroup('condition', COND.map(c => [c.id, c.label]), r.condition || 'vgp', 4) + '</section>' +
       '<section class="edit-section"><h2>Value</h2><div id="e-value">' + editValueHtml(r) + '</div>' +
@@ -698,6 +768,7 @@
   async function saveEditor() {
     const r = readEditForm();
     if (!r.title) { toast('Please type the album name.', true); const t = document.getElementById('e-title'); if (t) t.focus(); return; }
+    if (r.importStatus === 'pending' && r.mbid) r.importStatus = '';
     if (r.myValue && !parseMoney(r.myValue)) { toast('The value should be a number, like 25 or $25.', true); return; }
     try {
       const saved = await saveRec(r);
@@ -710,6 +781,47 @@
     } catch (e) { toast(e.message, true); }
   }
 
+  // From the form: search with what's typed, let the person pick, then fill in songs, details,
+  // pictures and value. What they chose themselves (shape, picture sleeve, notes, value) is kept.
+  async function findOnline() {
+    const E = S.edit, r = readEditForm();
+    if (!r.title && !r.catno && !r.barcode) { toast('Please type the album name first.', true); return; }
+    const p = modal('<h2>Looking for “' + esc(r.title || r.catno || r.barcode) + '”…</h2><div id="fo-body">' + loader('Searching the music database…') + '</div>' +
+      '<div class="row"><button class="btn" data-modal="cancel">Cancel</button></div>', { wide: true });
+    const tries = [];
+    if (r.barcode) tries.push({ barcode: r.barcode });
+    if (r.catno) tries.push({ catno: r.catno });
+    if (r.title && r.artist) tries.push({ artist: r.artist, title: r.title });
+    if (r.title) tries.push({ text: [r.artist, r.title].filter(Boolean).join(' ') });
+    let matches = [];
+    try {
+      for (const t of tries) { matches = await api.search(t); if (matches.length) break; }
+    } catch (e) { matches = []; toast(e.message, true); }
+    const body = document.getElementById('fo-body');
+    if (body) body.innerHTML = matches.length
+      ? '<p class="muted" style="margin:0 0 .6rem">Pick the one that matches your label and year.</p>' + matches.map(m => '<button class="match" data-modal="pick:' + esc(m.mbid) + '">' +
+        '<img src="' + esc(safeUrl(m.thumb)) + '" alt="" loading="lazy" data-hide-broken><span><span class="mt">' + esc(m.title) + '</span><br><span class="ma">' + esc(m.artist) + '</span><br>' +
+        '<span class="mm">' + esc([m.year, m.label, m.catno, m.country, m.format].filter(Boolean).join(' · ')) + '</span></span><span class="pick">This one</span></button>').join('')
+      : '<p>Nothing was found. Check the spelling of the album and artist, or add the catalog number, and try again.</p>';
+    modalWrap.querySelectorAll('img[data-hide-broken]').forEach(i => i.addEventListener('error', () => { i.style.visibility = 'hidden'; }));
+    const v = await p;
+    if (!v || !v.startsWith('pick:') || S.edit !== E) return;
+    toast('Getting the songs and details…');
+    try {
+      const d = await api.details(v.slice(5));
+      if (S.edit !== E) return;
+      for (const k of ['title', 'artist', 'year', 'label', 'catno', 'barcode', 'country', 'format', 'mbid', 'rgid']) if (d[k]) r[k] = d[k];
+      if (d.tracks && d.tracks.length) r.tracks = d.tracks;
+      if (d.credits && d.credits.length) r.credits = d.credits;
+      if (d.discogsId) r.discogsId = d.discogsId;
+      r.importStatus = '';
+      E.songsText = songsToText(r.tracks);
+      E.dirty = true;
+      renderEdit(); markDirty();
+      fillInBackground();
+    } catch (e) { toast(e.message, true); }
+  }
+
   async function cancelEditor() {
     const E = S.edit;
     if (E && (E.dirty || E.isNew) && !(await confirmBox(E.isNew ? 'Leave without adding this record?' : 'Leave without saving your changes?', 'Yes, leave', 'No, stay here'))) return;
@@ -717,6 +829,197 @@
     S.edit = null;
     if (back === 'add' && S.add.stage === 'loading-edit') S.add.stage = 'start';
     go(back);
+  }
+
+  // ---------------- Import a list (CSV) ----------------
+  const CI = window.CsvImport;
+  const csvPick = document.createElement('input');
+  csvPick.type = 'file'; csvPick.accept = '.csv,.tsv,.txt,text/csv'; csvPick.hidden = true;
+  document.body.appendChild(csvPick);
+  csvPick.addEventListener('change', () => { const f = csvPick.files && csvPick.files[0]; if (f) loadCsvFile(f); });
+
+  async function loadCsvFile(file) {
+    if (!/\.(csv|tsv|txt)$/i.test(file.name) && !/csv|text/.test(file.type)) {
+      toast('Please choose a CSV file. In Excel use File › Save As › CSV.', true); return;
+    }
+    try {
+      const rows = CI.parseCSV(CI.decode(await file.arrayBuffer()));
+      if (!rows.length) { toast('That file looks empty.', true); return; }
+      const d = CI.detectColumns(rows);
+      Object.assign(S.imp, { stage: 'map', fileName: file.name, rows, hasHeader: d.hasHeader, map: d.map, values: !!S.settings.hasDiscogs });
+      go('import');
+    } catch (e) { toast('That file could not be read: ' + e.message, true); }
+  }
+
+  const impRows = () => (S.imp.hasHeader ? S.imp.rows.slice(1) : S.imp.rows);
+  const impRecords = () => impRows().map(r => CI.rowToRecord(r, S.imp.map, { list: S.imp.list })).filter(r => r.title || r.artist);
+  const pendingIds = () => S.records.filter(r => r.importStatus === 'pending').map(r => r.id);
+  const minutes = n => n < 1.5 ? 'about a minute' : 'about ' + Math.round(n) + ' minutes';
+
+  function renderImport() {
+    const I = S.imp;
+    const head = '<div class="page-head"><div><h1>Import a list</h1><div class="sub">Already have your records in a spreadsheet? Bring them all in at once and we’ll look up each one: songs, sleeve pictures and value.</div></div></div>';
+    if (I.stage === 'map') { main.innerHTML = head + importMapHtml(); return; }
+    if (I.stage === 'run' || I.stage === 'done' || I.stage === 'stopped') { main.innerHTML = head + '<section class="panel imp-run" id="imp-run" aria-live="polite"></section>'; updateRun(); return; }
+    const pending = pendingIds().length;
+    main.innerHTML = head +
+      (pending ? '<section class="panel"><h2>' + pending + ' imported records still need looking up</h2><p>Pick up where you left off.</p><div class="row"><button class="btn yellow tall" data-action="imp-continue">' + icon.refresh + 'Continue looking them up</button></div></section>' : '') +
+      '<div class="add-wrap"><section class="add-left"><div class="step"><div class="step-num">1</div><h2>Choose the file</h2></div>' +
+      '<div class="drop" data-drop="csv"><div class="sheet-art bob" aria-hidden="true"></div><div class="drop-title">Drag the list file here</div><div class="muted">or</div>' +
+      '<button class="btn primary tall" data-action="imp-choose">' + icon.folder + 'Choose the file on my computer</button></div></section>' +
+      '<section class="add-right"><h2>How to make the file</h2>' +
+      '<ol class="steps-list"><li>Open the list in Excel or Google Sheets.</li><li>Put one record on each row.</li><li>In Excel: <strong>File › Save As</strong> and choose <strong>CSV</strong>. In Google Sheets: <strong>File › Download › CSV</strong>.</li></ol>' +
+      '<p>Helpful columns (any you have; names don’t need to match exactly):</p>' +
+      '<div style="overflow-x:auto"><table class="report-table small-table"><thead><tr><th>Artist</th><th>Album</th><th>Year</th><th>Label</th><th>Catalog #</th><th>Condition</th><th>Picture sleeve</th></tr></thead>' +
+      '<tbody><tr><td>Elvis Presley</td><td>Elvis</td><td>1956</td><td>RCA Victor</td><td>LPM-1382</td><td>Very good</td><td>Yes</td></tr>' +
+      '<tr><td>Foo Fighters</td><td>Foo Fighters</td><td>1995</td><td>Roswell</td><td></td><td>Like new</td><td>No</td></tr></tbody></table></div>' +
+      '<p class="muted">A collection exported from Discogs works too. Barcodes and catalog numbers give the best matches.</p></section></div>';
+  }
+
+  function importMapHtml() {
+    const I = S.imp, rows = I.rows, recs = impRecords();
+    const headRow = rows[0] || [];
+    const sample = I.hasHeader ? rows[1] || [] : rows[0] || [];
+    const colName = i => (I.hasHeader && headRow[i] ? '“' + headRow[i] + '”' : 'Column ' + (i + 1)) + (sample[i] ? ' (e.g. ' + String(sample[i]).slice(0, 24) + ')' : '');
+    const ncols = Math.max(...rows.slice(0, 20).map(r => r.length));
+    const selects = CI.FIELDS.map(f => '<div class="field"><label for="map-' + f.key + '">' + esc(f.label) + '</label><select id="map-' + f.key + '" class="input" data-map="' + f.key + '">' +
+      '<option value="-1">— Not in my file —</option>' +
+      Array.from({ length: ncols }, (_, i) => '<option value="' + i + '"' + (I.map[f.key] === i ? ' selected' : '') + '>' + esc(colName(i)) + '</option>').join('') + '</select></div>').join('');
+    const prev = recs.slice(0, 6);
+    const sleeveTxt = v => v === true ? 'Have it' : v === false ? 'Need one' : '—';
+    const perRec = I.values && S.settings.hasDiscogs ? 9 : 4;
+    return '<section class="panel wide-panel"><h2>We found ' + recs.length + (recs.length === 1 ? ' record' : ' records') + ' in “' + esc(I.fileName) + '”</h2>' +
+      (recs.length ? '' : '<p class="check-note">No records yet: tell us which column has the album name or artist below.</p>') +
+      '<label class="check"><input type="checkbox" id="imp-header"' + (I.hasHeader ? ' checked' : '') + '> The first row has the column names</label>' +
+      '<h2 style="margin-top:.4rem">Check which column is which</h2><p class="muted">We guessed from the column names. Change any that are wrong.</p>' +
+      '<div class="map-grid">' + selects + '</div></section>' +
+      '<section class="panel wide-panel"><h2>Here are the first few, as they will come in</h2><div style="overflow-x:auto" id="imp-preview"><table class="report-table"><thead><tr><th>Artist</th><th>Album</th><th>Year</th><th>Label</th><th>Catalog #</th><th>Shape</th><th>Picture sleeve</th></tr></thead><tbody>' +
+      prev.map(r => '<tr><td>' + esc(r.artist) + '</td><td>' + esc(r.title) + '</td><td>' + esc(r.year) + '</td><td>' + esc(r.label) + '</td><td>' + esc(r.catno) + '</td><td>' + esc(condLabel(r.condition)) + '</td><td>' + sleeveTxt(r.haveCover) + '</td></tr>').join('') +
+      '</tbody></table></div></section>' +
+      '<section class="panel wide-panel"><h2>Before we start</h2>' +
+      '<div class="label">Put them in</div>' + '<div class="choice-grid" style="max-width:28rem">' +
+      [['collection', 'My records'], ['wish', 'My wish list']].map(([v, l]) => '<button class="choice" data-action="imp-list" data-v="' + v + '" aria-pressed="' + (I.list === v) + '">' + l + '</button>').join('') + '</div>' +
+      '<label class="check"><input type="checkbox" id="imp-values"' + (I.values && S.settings.hasDiscogs ? ' checked' : '') + (S.settings.hasDiscogs ? '' : ' disabled') + '> Look up the value of each record too' +
+      (S.settings.hasDiscogs ? '' : ' <span class="muted">(add your Discogs key in Settings first)</span>') + '</label>' +
+      '<label class="check"><input type="checkbox" id="imp-dupes"' + (I.skipDupes ? ' checked' : '') + '> Skip records that are already on the shelf</label>' +
+      '<p class="muted">Looking up ' + recs.length + ' records takes ' + minutes(recs.length * perRec / 60) + '. You can keep using the app, or press Stop and carry on another day. Every record is saved straight away.</p>' +
+      '<div class="row"><button class="btn yellow tall" data-action="imp-start"' + (recs.length ? '' : ' disabled') + '>' + icon.check + 'Import ' + recs.length + ' records and look them up</button>' +
+      '<button class="btn tall" data-action="imp-reset">Choose a different file</button></div></section>';
+  }
+
+  function updateRun() {
+    const box = document.getElementById('imp-run');
+    const R = S.imp.run;
+    if (!box || !R) return;
+    const done = R.i, total = R.ids.length, pct = total ? Math.round(done / total * 100) : 100;
+    const per = done ? (Date.now() - R.started) / done / 60000 : 0;
+    const left = per ? minutes(per * (total - done)) + ' left' : '';
+    const finished = S.imp.stage !== 'run';
+    box.innerHTML =
+      '<h2>' + (finished ? (S.imp.stage === 'done' ? 'All done!' : 'Stopped') : 'Looking up your records…') + '</h2>' +
+      '<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + total + '" aria-valuenow="' + done + '"><div style="width:' + pct + '%"></div></div>' +
+      '<div class="run-line"><strong>' + done + ' of ' + total + '</strong>' + (!finished && left ? ' · ' + esc(left) : '') + '</div>' +
+      (!finished && R.current ? '<div class="run-now"><span class="disc mini" aria-hidden="true"></span>Now: ' + esc(R.current) + '</div>' : '') +
+      '<div class="stats"><div class="stat"><div class="n">' + R.found + '</div><div class="l">found online</div></div>' +
+      '<div class="stat"><div class="n">' + R.notFound + '</div><div class="l">to check yourself</div></div>' +
+      (R.skipped ? '<div class="stat"><div class="n">' + R.skipped + '</div><div class="l">already on the shelf (skipped)</div></div>' : '') + '</div>' +
+      (R.error ? '<p class="check-note">' + esc(R.error) + '</p>' : '') +
+      (R.recent.length ? '<ul class="recent">' + R.recent.map(x => '<li><span class="badge ' + (x.ok ? 'have' : 'need') + '">' + (x.ok ? icon.check + 'Found' : icon.box + 'Check') + '</span> ' + esc(x.label) + '</li>').join('') + '</ul>' : '') +
+      '<div class="row">' + (finished
+        ? '<button class="btn yellow tall" data-action="imp-see">See my records</button>' +
+          (R.notFound ? '<button class="btn tall" data-action="imp-see-check">Show the ' + R.notFound + ' to check</button>' : '') +
+          (pendingIds().length ? '<button class="btn tall" data-action="imp-continue">' + icon.refresh + 'Continue looking up</button>' : '')
+        : '<button class="btn tall" data-action="imp-stop">Stop for now</button>') + '</div>' +
+      (!finished ? '<p class="muted">Records that can’t be matched for sure are saved with what was in your list and marked “Check this one”, so nothing is lost.</p>' : '');
+  }
+
+  async function startImport() {
+    const I = S.imp;
+    let recs = impRecords();
+    let skipped = 0;
+    if (I.skipDupes) {
+      const seen = new Set(S.records.map(CI.dupKey));
+      recs = recs.filter(r => { const k = CI.dupKey(r); if (seen.has(k)) { skipped++; return false; } seen.add(k); return true; });
+    }
+    if (!recs.length) { toast(skipped ? 'All of those are already on the shelf.' : 'There are no records to import.', true); return; }
+    try {
+      const saved = await api.addMany(recs);
+      const d = await api.load(); S.records = d.records || S.records;
+      toast('Imported ' + saved.length + ' records. Now looking them up…');
+      runLookups(saved.map(r => r.id), skipped);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function runLookups(ids, skipped) {
+    if (S.imp.run && S.imp.stage === 'run') return; // already running
+    const R = S.imp.run = { ids, i: 0, found: 0, notFound: 0, skipped: skipped || 0, stop: false, started: Date.now(), recent: [], current: '', error: '' };
+    S.imp.stage = 'run';
+    if (S.view === 'import') renderImport(); else go('import');
+    for (; R.i < R.ids.length; R.i++) {
+      if (R.stop) break;
+      const rec = byId(R.ids[R.i]);
+      if (!rec || rec.importStatus !== 'pending') continue;
+      R.current = [rec.artist, rec.title].filter(Boolean).join(' – ');
+      updateRun();
+      try {
+        const ok = await lookupImported(rec, S.imp.values && S.settings.hasDiscogs);
+        ok ? R.found++ : R.notFound++;
+        R.recent.unshift({ label: R.current, ok });
+        R.recent.length = Math.min(R.recent.length, 8);
+      } catch (e) {
+        R.error = e.message + ' The rest are saved and can be looked up later.';
+        break;
+      }
+      updateRun();
+    }
+    S.imp.stage = R.i >= R.ids.length ? 'done' : 'stopped';
+    R.current = '';
+    updateRun();
+    toast(S.imp.stage === 'done' ? 'Finished looking up your list' : 'Stopped. You can continue any time.');
+    if (S.view === 'records') renderShelf();
+  }
+
+  // One imported record: find it online, then fill in songs, details, sleeve pictures and value.
+  // What was in the list (shape, picture sleeve, notes, what was paid) is always kept.
+  async function lookupImported(rec, withValues) {
+    const r = { ...rec };
+    const tries = [];
+    if (r.barcode && r.barcode.length >= 8) tries.push({ barcode: r.barcode });
+    if (r.catno) tries.push({ catno: r.catno });
+    if (r.title && r.artist) tries.push({ artist: r.artist, title: r.title });
+    if (r.title) tries.push({ text: [r.artist, r.title].filter(Boolean).join(' ') });
+    let best = null;
+    for (const t of tries) {
+      const cands = await api.search(t);
+      best = CI.pickBest(r, cands);
+      if (best) break;
+    }
+    if (best) {
+      const d = await api.details(best.match.mbid);
+      for (const k of ['year', 'label', 'catno', 'barcode', 'country', 'format']) if (!r[k] && d[k]) r[k] = d[k];
+      if (!r.title) r.title = d.title;
+      if (!r.artist) r.artist = d.artist;
+      r.mbid = d.mbid; r.rgid = d.rgid;
+      if (d.tracks && d.tracks.length) r.tracks = d.tracks;
+      if (d.credits && d.credits.length) r.credits = d.credits;
+      r.discogsId = r.discogsId || d.discogsId || '';
+    }
+    // Not matched by name? Only trust Discogs if the list gave something exact to go on,
+    // so a record never gets someone else's picture or price.
+    const exact = !!(best || r.discogsId || r.catno || r.barcode);
+    if (best || (exact && S.settings.hasDiscogs)) {
+      const c = await api.fetchCover(r).catch(() => null);
+      if (c && c.coverFront) { r.coverFront = c.coverFront; r.coverSource = 'auto'; }
+      if (c && c.coverBack) r.coverBack = c.coverBack;
+      if (c && c.discogsId && !r.discogsId) r.discogsId = c.discogsId;
+    }
+    if (withValues && exact) {
+      try { const p = await api.prices(r); r.prices = p.prices; r.discogsId = p.discogsId || r.discogsId; }
+      catch (e) { if (/key|internet/i.test(e.message)) throw e; }
+    }
+    r.importStatus = best ? '' : 'notFound';
+    await saveRec(r);
+    return !!best;
   }
 
   // ---------------- Value report ----------------
@@ -733,9 +1036,9 @@
       '<button class="btn" data-action="csv">Save as a spreadsheet</button></div></div>' +
       '<div class="stats"><div class="stat"><div class="n">' + rs.length + '</div><div class="l">records</div></div>' +
       '<div class="stat"><div class="n">' + esc(money(total) || '$0') + '</div><div class="l">total value (' + priced + ' with a value)</div></div>' +
-      '<div class="stat"><div class="n">' + need + '</div><div class="l">still need a cover</div></div>' +
+      '<div class="stat"><div class="n">' + need + '</div><div class="l">still need a picture sleeve</div></div>' +
       '<div class="stat"><div class="n">' + wish + '</div><div class="l">on the wish list</div></div></div>' +
-      (rs.length ? '<div style="overflow-x:auto"><table class="report-table"><thead><tr><th>Artist</th><th>Album</th><th>Year</th><th>Label and number</th><th>Shape</th><th>Cover</th><th class="num">Value</th></tr></thead><tbody>' +
+      (rs.length ? '<div style="overflow-x:auto"><table class="report-table"><thead><tr><th>Artist</th><th>Album</th><th>Year</th><th>Label and number</th><th>Shape</th><th>Picture sleeve</th><th class="num">Value</th></tr></thead><tbody>' +
         rs.map(r => '<tr><td>' + esc(r.artist) + '</td><td>' + esc(r.title) + '</td><td>' + esc(r.year) + '</td><td>' + esc([r.label, r.catno].filter(Boolean).join(' ')) +
           '</td><td>' + esc(condLabel(r.condition)) + '</td><td>' + (r.haveCover === true ? 'Have it' : r.haveCover === false ? 'Need one' : '—') +
           '</td><td class="num">' + esc(amountFor(r) != null ? money(amountFor(r)) : '—') + '</td></tr>').join('') +
@@ -745,7 +1048,7 @@
   }
   function csv() {
     const cell = v => { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-    const head = ['Artist', 'Album', 'Year', 'Label', 'Catalog number', 'Barcode', 'Country', 'List', 'Shape', 'Have cover', 'Value (USD)', 'Value checked', 'What I paid', 'Notes', 'Added'];
+    const head = ['Artist', 'Album', 'Year', 'Label', 'Catalog number', 'Barcode', 'Country', 'List', 'Shape', 'Have picture sleeve', 'Value (USD)', 'Value checked', 'What I paid', 'Notes', 'Added'];
     const rows = S.records.map(r => [r.artist, r.title, r.year, r.label, r.catno, r.barcode, r.country, r.list === 'wish' ? 'Wish list' : 'My records',
       condLabel(r.condition), r.haveCover === true ? 'Yes' : r.haveCover === false ? 'No' : '', amountFor(r) != null ? amountFor(r) : '',
       r.prices && r.prices.checkedAt ? dateText(r.prices.checkedAt) : '', r.paid, r.notes, dateText(r.addedAt)]);
@@ -770,8 +1073,8 @@
       '<p class="muted">For a value that matches each record’s condition, Discogs also asks you to fill in <a class="link" href="#" data-action="open" data-url="https://www.discogs.com/settings/seller">Seller Settings</a> once (you never have to sell anything). Until then, the app shows the cheapest copy for sale.</p></section>' +
 
       '<section class="panel"><h2>Read photos automatically (optional)</h2><div>' + status(s.hasClaude) + '</div>' +
-      '<p>With this turned on, a photo of a cover is enough: Claude reads the name and catalog number for you. It needs an Anthropic API key from the Claude Console, and each photo costs a small amount (usually around a cent).</p>' +
-      '<p class="muted">Without it, photos are still saved as covers and you type the name or barcode instead.</p>' +
+      '<p>With this turned on, a photo of a picture sleeve is enough: Claude reads the name and catalog number for you. It needs an Anthropic API key from the Claude Console, and each photo costs a small amount (usually around a cent).</p>' +
+      '<p class="muted">Without it, photos are still saved as sleeve pictures and you type the name or barcode instead.</p>' +
       '<form data-form="claude" class="row"><label for="ckey" hidden>Anthropic API key</label><input id="ckey" type="password" class="input" style="flex:1 1 18rem" placeholder="' + (s.hasClaude ? 'Saved. Paste a new one to replace it.' : 'Paste your Anthropic API key here') + '" autocomplete="off">' +
       '<button class="btn primary" type="submit">Save</button>' + (s.hasClaude ? '<button class="btn" type="button" data-action="clear-key" data-id="anthropicKey">Remove</button>' : '') + '</form>' +
       '<p class="small muted">Keys are kept on this computer only, locked with Windows’ own protection, and are never put in backups.</p></section>' +
@@ -786,13 +1089,14 @@
   // ---------------- Help ----------------
   function renderHelp() {
     const qa = [
-      ['How do I add a record?', 'Press "Add a record" on the left. Drag a photo of the cover into the blue box, choose one from your computer, or hold the cover up to the webcam. You can also just type the name, or the barcode from the back.'],
+      ['How do I add a record?', 'Press "Add a record" on the left. Drag a photo of the picture sleeve into the blue box, choose one from your computer, or hold it up to the webcam. You can also just type the name, or the barcode from the back.'],
       ['Why does it show several versions?', 'Most records were pressed many times, in different years and countries. Pick the one whose label, year and catalog number match yours. The catalog number is usually on the spine and the centre label.'],
-      ['Where do the cover pictures come from?', 'They are found automatically in a free online library of album covers. If there isn’t one, your own photo is used. You can always press "Use my own photo" to change it.'],
-      ['How do I mark that I have the cover?', 'Click a record, then press "Yes, I have it" or "No, I need one". Press "Need a cover" at the top of My Records to see every record that still needs one.'],
+      ['Where do the sleeve pictures come from?', 'They are found automatically in a free online library of record sleeves. If there isn’t one, your own photo is used. You can always press "Use my own photo" to change it.'],
+      ['How do I mark that I have the picture sleeve?', 'Click a record, then press "Yes, I have it" or "No, I need one". Press "Need a picture sleeve" at the top of My Records to see every record that still needs one.'],
       ['How is the value worked out?', 'From Discogs, the biggest record marketplace. Best is its price for the shape you chose (this needs Seller Settings filled in on the Discogs account). Otherwise it shows the cheapest copy for sale now, or the cheapest copy of any version of that album. You can always type your own value instead. Values are a guide, not an appraisal.'],
       ['How do I change a record\u2019s details?', 'Click the record, then press "Edit all the details". Change anything you like, then press the yellow Save button at the bottom. Nothing changes until you press Save.'],
       ['A record has no value. What can I do?', 'Open Settings and press "Test my Discogs key". Then click the record, press "Edit all the details", check the album name and artist, and press "Check the value now". If nobody is selling it, type your own value.'],
+      ['Can I bring in a list I already have?', 'Yes. Save the list from Excel or Google Sheets as a CSV file, then press "Import a list" on the left. Each record is looked up for its songs, sleeve pictures and value. Any that can\u2019t be matched for sure are marked "Check this one".'],
       ['The words are too small.', 'Press "A +" at the bottom left, or choose Extra large in Settings.'],
       ['Can it read a record out loud?', 'Yes. Click a record and press "Read it to me".'],
       ['How do I keep my collection safe?', 'Go to Settings and press "Back up my collection". Put the backup on a USB stick.']
@@ -871,7 +1175,7 @@
     'pick-photo': () => choosePhoto({ type: 'add-front' }),
     'pick-back': () => choosePhoto({ type: 'add-back' }),
     'webcam': () => webcam({ type: 'add-front' }),
-    'pick-match': el => pickMatch(el.dataset.id),
+    'pick-match': el => { document.querySelectorAll('.match').forEach(b => { b.disabled = true; }); return pickMatch(el.dataset.id); },
     'manual': () => openManual(),
     'edit': el => { const r = byId(el.dataset.id); if (r) openEditor(r, { isNew: false }); },
     'edit-choice': el => {
@@ -908,6 +1212,7 @@
       refreshEditValue();
     },
     'edit-cancel': () => cancelEditor(),
+    'edit-find-online': () => findOnline(),
     'add-reset': () => { const l = S.add.forList; S.add = freshAdd(); S.add.forList = l; renderAdd(); },
     // report
     'update-all': async () => {
@@ -933,6 +1238,14 @@
       toast('Checked ' + i + ' records. ' + found + ' have a value.');
       if (S.view === 'report') renderReport();
     },
+    'imp-choose': () => { csvPick.value = ''; csvPick.click(); },
+    'imp-reset': () => { S.imp = freshImp(); renderImport(); },
+    'imp-list': el => { S.imp.list = el.dataset.v; el.parentElement.querySelectorAll('.choice').forEach(b => b.setAttribute('aria-pressed', String(b === el))); },
+    'imp-start': () => startImport(),
+    'imp-stop': () => { if (S.imp.run) S.imp.run.stop = true; toast('Stopping after this record…'); },
+    'imp-continue': () => { const ids = pendingIds(); if (!ids.length) { toast('Nothing left to look up.'); return; } S.imp.run = null; runLookups(ids, 0); },
+    'imp-see': () => { S.filter = 'all'; go(S.imp.list === 'wish' ? 'wish' : 'records'); },
+    'imp-see-check': () => { S.filter = 'check'; go('records'); },
     'print': () => api.reportPrint().catch(e => toast(e.message, true)),
     'pdf': async () => { try { const p = await api.reportPdf(); if (p) toast('Saved the report'); } catch (e) { toast(e.message, true); } },
     'csv': async () => { try { const p = await api.exportCsv(csv()); if (p) toast('Saved the spreadsheet'); } catch (e) { toast(e.message, true); } },
@@ -1022,6 +1335,10 @@
   });
   main.addEventListener('change', async e => {
     const t = e.target;
+    if (t.dataset && t.dataset.map) { S.imp.map[t.dataset.map] = Number(t.value); renderImport(); return; }
+    if (t.id === 'imp-header') { S.imp.hasHeader = t.checked; renderImport(); return; }
+    if (t.id === 'imp-values') { S.imp.values = t.checked; renderImport(); return; }
+    if (t.id === 'imp-dupes') { S.imp.skipDupes = t.checked; return; }
     if (t.id === 'sort') { S.sort = t.value; renderGrid(); return; }
     if (t.dataset && t.dataset.field) {
       const r = byId(t.dataset.id); if (!r) return;

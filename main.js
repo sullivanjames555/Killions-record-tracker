@@ -168,28 +168,13 @@ function registerIpc() {
     return lookup.identifyPhoto(dataUrl, key, store.data.settings.claudeModel);
   });
 
-  // Fetch songs, credits, cover pictures and value for one chosen release.
+  // Songs, credits and details for one chosen release. Quick: one MusicBrainz call.
+  // The sleeve pictures and the value are fetched separately (lookup:cover, lookup:prices)
+  // so the form can open straight away and fill those in as they arrive.
   handle('lookup:details', async mbid => {
     const d = await lookup.details(String(mbid));
-    const covers = await lookup.coverUrls(d.mbid, d.rgid);
-    let priceInfo = { prices: null, discogsId: d.discogsId };
-    try { priceInfo = await getPrices(d); } catch (e) { priceInfo.priceError = friendly(e); }
     log('Looked up ' + d.artist + ' - ' + d.title + ' (MusicBrainz ' + d.mbid + ')');
-    if (!covers.front && priceInfo.discogsCover) covers.front = priceInfo.discogsCover;
-    const out = { ...d, discogsId: priceInfo.discogsId || d.discogsId, prices: priceInfo.prices, priceError: priceInfo.priceError || '' };
-    for (const side of ['front', 'back']) {
-      if (!covers[side]) continue;
-      try {
-        const img = await lookup.download(covers[side]);
-        if (img) {
-          const name = store.writeCover(img.buffer, img.ext);
-          out[side === 'front' ? 'coverFront' : 'coverBack'] = name;
-          out[side === 'front' ? 'frontUrl' : 'backUrl'] = coverUrl(name);
-        }
-      } catch (e) { /* picture is a bonus; carry on without it */ }
-    }
-    out.coverSource = out.coverFront ? 'auto' : '';
-    return out;
+    return d;
   });
 
   handle('lookup:prices', async rec => {
@@ -197,16 +182,41 @@ function registerIpc() {
     return { prices: p.prices, discogsId: p.discogsId };
   });
 
+  // Sleeve pictures: the Cover Art Archive first, then the Discogs picture if there is a key.
   handle('lookup:cover', async rec => {
-    if (!rec || !rec.mbid) return null;
-    const covers = await lookup.coverUrls(rec.mbid, rec.rgid);
-    const out = {};
-    for (const side of ['front', 'back']) {
-      if (!covers[side]) continue;
-      const img = await lookup.download(covers[side]).catch(() => null);
-      if (img) out[side] = store.writeCover(img.buffer, img.ext);
+    rec = rec || {};
+    const out = { coverFront: '', coverBack: '', frontUrl: '', backUrl: '', discogsId: rec.discogsId || '' };
+    const save = async url => {
+      const img = await lookup.download(url).catch(() => null);
+      return img ? store.writeCover(img.buffer, img.ext) : '';
+    };
+    if (rec.mbid) {
+      const c = await lookup.coverUrls(rec.mbid, rec.rgid).catch(() => ({}));
+      if (c.front) out.coverFront = await save(c.front);
+      if (c.back) out.coverBack = await save(c.back);
     }
-    return { coverFront: out.front || '', coverBack: out.back || '', frontUrl: coverUrl(out.front), backUrl: coverUrl(out.back) };
+    const token = store.getSecret('discogsToken');
+    if (!out.coverFront && token && (rec.title || rec.discogsId)) {
+      try {
+        const hit = await lookup.discogsFind(rec, token);
+        if (hit) {
+          out.discogsId = out.discogsId || hit.id;
+          if (hit.cover && !/spacer\.gif/.test(hit.cover)) out.coverFront = await save(hit.cover);
+        }
+      } catch (e) { log('Discogs picture search failed: ' + e.message); }
+    }
+    out.frontUrl = coverUrl(out.coverFront);
+    out.backUrl = coverUrl(out.coverBack);
+    log('Sleeve pictures for "' + (rec.artist || '') + ' - ' + (rec.title || '') + '": front ' + (out.coverFront ? 'found' : 'none') + ', back ' + (out.coverBack ? 'found' : 'none'));
+    return out;
+  });
+
+  // Many records at once (CSV import): one save to disk at the end.
+  handle('records:addMany', list => {
+    const items = Array.isArray(list) ? list.slice(0, 5000) : [];
+    const added = items.map(r => withUrls(store.upsert(r, { noSave: true })));
+    store.save();
+    return added;
   });
 
   handle('settings:save', s => store.setSettings(s || {}));

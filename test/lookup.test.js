@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const L = require('../src/lookup');
+L.setPacing(false); // no need to wait between made-up answers
 const { Store } = require('../src/store');
 
 let passed = 0;
@@ -176,6 +177,13 @@ const MB_RELEASE = {
   await t('explains a rejected Anthropic key', async () => {
     const http = fakeHttp([['api.anthropic.com', json({ error: {} }, 401)]]);
     await assert.rejects(L.identifyPhoto('data:image/png;base64,AAAA', 'BAD', null, http), /not accepted/);
+  });
+
+  await t('retries once when a service is busy', async () => {
+    let n = 0;
+    const http = async () => (++n === 1 ? json({}, 503) : json({ releases: [] }));
+    const r = await L.search({ text: 'x' }, http);
+    assert.deepStrictEqual(r, []); assert.strictEqual(n, 2);
   });
 
   console.log('Storage tests');

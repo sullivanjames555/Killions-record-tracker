@@ -23,17 +23,28 @@
     saveRecord: async r => { r = { ...r, id: r.id || 'n' + (n++), addedAt: r.addedAt || new Date().toISOString() }; const i = records.findIndex(x => x.id === r.id); if (i >= 0) records[i] = r; else records.unshift(r); return r; },
     deleteRecord: async id => { records = records.filter(r => r.id !== id); return true; },
     saveImage: async d => ({ name: 'img' + (n++) + '.jpg', url: d }),
-    search: async () => { await wait(300); return [
+    search: async q => { await wait(150);
+      const want = JSON.stringify(q).toLowerCase();
+      const db = [
+        { mbid: 'e1', title: 'Elvis', artist: 'Elvis Presley', year: '1956', label: 'RCA Victor', catno: 'LPM-1382', country: 'US', format: '12" Vinyl', thumb: svg('#2b2b2b', '#c9a33a', '#e7d9a8') },
+        { mbid: 'f1', title: 'Foo Fighters', artist: 'Foo Fighters', year: '1995', label: 'Roswell', catno: '7243 8 34027 1 5', country: 'US', format: '12" Vinyl', thumb: svg('#d9d2c5', '#9a958a', '#5a5a5a') },
+        { mbid: 'b1', title: 'Abbey Road', artist: 'The Beatles', year: '1969', label: 'Apple', catno: 'SO-383', country: 'US', format: '12" Vinyl', thumb: svg('#1f6aa5', '#d9d9d9', '#222') }
+      ];
+      const hits = db.filter(d => want.includes(d.title.toLowerCase()) || (d.catno && want.includes(d.catno.toLowerCase())));
+      if (hits.length || !/kind of blue|miles/.test(want)) return hits;
+      return [
       { mbid: 'x1', title: 'Kind of Blue', artist: 'Miles Davis', year: '1959', label: 'Columbia', catno: 'CL 1355', country: 'US', format: '12" Vinyl', thumb: svg('#0b2a5c', '#3a6fc4', '#ffffff') },
       { mbid: 'x2', title: 'Kind of Blue', artist: 'Miles Davis', year: '1971', label: 'Columbia', catno: 'PC 8163', country: 'US', format: '12" Vinyl', thumb: 'https://invalid.example/none.jpg' }]; },
     identifyPhoto: async () => null,
-    details: async mbid => { await wait(400); return { mbid, title: 'Kind of Blue', artist: 'Miles Davis', year: '1959', label: 'Columbia', catno: 'CL 1355', country: 'US', format: '12" Vinyl', coverSource: 'auto',
-      coverFront: 'f.jpg', frontUrl: svg('#0b2a5c', '#3a6fc4', '#ffffff'), discogsId: '1234', prices: { nm: 220, vgp: 120, vg: 70, g: 25 },
+    details: async mbid => { await wait(300);
+      if (mbid !== 'x1' && mbid !== 'x2') return { mbid, title: { e1: 'Elvis', f1: 'Foo Fighters', b1: 'Abbey Road' }[mbid], artist: { e1: 'Elvis Presley', f1: 'Foo Fighters', b1: 'The Beatles' }[mbid], year: '1956', label: 'RCA Victor', country: 'US', format: '12" Vinyl', discogsId: '77', tracks: [T('Side A', 'A1', 'Blue Suede Shoes', '1:58')], credits: [] };
+      return { mbid, title: 'Kind of Blue', artist: 'Miles Davis', year: '1959', label: 'Columbia', catno: 'CL 1355', country: 'US', format: '12" Vinyl', discogsId: '1234',
       tracks: [T('Side A', 'A1', 'So What', '9:22'), T('Side A', 'A2', 'Freddie Freeloader', '9:46'), T('Side B', 'B1', 'All Blues', '11:33')], credits: [{ role: 'Producer', name: 'Teo Macero' }] }; },
-    prices: async r => { await wait(200); return { prices: { lowest: 21, forSale: 4, anyLowest: 9, anyForSale: 120, note: 'needsSeller', checkedAt: new Date().toISOString() }, discogsId: r.discogsId || '1' }; },
+    prices: async r => { await wait(250); if (r.mbid === 'x1') return { prices: { nm: 220, vgp: 120, vg: 70, g: 25, checkedAt: new Date().toISOString() }, discogsId: '1234' }; return { prices: { lowest: 21, forSale: 4, anyLowest: 9, anyForSale: 120, note: 'needsSeller', checkedAt: new Date().toISOString() }, discogsId: r.discogsId || '1' }; },
     testDiscogs: async () => { await wait(200); return { username: 'killion', conditionPrices: false, reason: 'needsSeller' }; },
     openLog: async () => true,
-    fetchCover: async () => null,
+    fetchCover: async r => { await wait(700); return { coverFront: 'auto-' + (r.mbid || 'd') + '.jpg', frontUrl: svg('#0b2a5c', '#3a6fc4', '#ffffff'), coverBack: '', backUrl: '' }; },
+    addMany: async list => { const out = list.map(r => ({ ...r, id: 'i' + (n++), addedAt: new Date().toISOString() })); records = out.concat(records); return out; },
     saveSettings: async s => { settings = { ...settings, ...s }; return settings; },
     backup: async () => null, restore: async () => null, reportPdf: async () => null, reportPrint: async () => true,
     exportCsv: async () => null, openExternal: async () => true, openDataFolder: async () => true

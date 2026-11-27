@@ -40,12 +40,12 @@ class Store {
   // ---- records ----
   all() { return this.data.records; }
 
-  upsert(rec) {
+  upsert(rec, opts = {}) {
     const clean = sanitizeRecord(rec);
     const i = this.data.records.findIndex(r => r.id === clean.id);
     if (i >= 0) this.data.records[i] = { ...this.data.records[i], ...clean, updatedAt: new Date().toISOString() };
     else this.data.records.unshift({ ...clean, addedAt: clean.addedAt || new Date().toISOString() });
-    this.save();
+    if (!opts.noSave) this.save();
     return this.data.records.find(r => r.id === clean.id);
   }
 
@@ -150,7 +150,7 @@ class Store {
 }
 
 const STR = ['id', 'list', 'title', 'artist', 'year', 'label', 'catno', 'barcode', 'country', 'format', 'mbid', 'rgid',
-  'discogsId', 'coverFront', 'coverBack', 'userPhoto', 'coverSource', 'condition', 'notes', 'paid', 'myValue', 'addedAt'];
+  'discogsId', 'coverFront', 'coverBack', 'userPhoto', 'coverSource', 'condition', 'notes', 'paid', 'myValue', 'importStatus', 'addedAt'];
 
 function sanitizeRecord(r) {
   const out = {};

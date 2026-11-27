@@ -53,14 +53,39 @@ async function getJSON(url, opts = {}, http = request) {
   return JSON.parse(r.body.toString('utf8'));
 }
 
-// MusicBrainz asks for no more than one request per second.
-let lastMB = 0;
-async function mbGet(pathAndQuery, http) {
-  const wait = lastMB + 1100 - Date.now();
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  lastMB = Date.now();
-  return getJSON(MB + pathAndQuery, {}, http);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Each service gets its own queue so requests are spaced out and never pile up:
+// MusicBrainz asks for at most 1 request a second, Discogs for at most 60 a minute.
+function pacer(gapMs) {
+  let chain = Promise.resolve();
+  let last = 0;
+  return fn => {
+    const run = chain.then(async () => {
+      const wait = last + gapMs - Date.now();
+      if (wait > 0) await sleep(wait);
+      last = Date.now();
+    }).then(fn);
+    chain = run.catch(() => {});
+    return run;
+  };
 }
+const mbQueue = pacer(1100);
+const discogsQueue = pacer(1050);
+let PACE = true; // tests switch pacing off
+function setPacing(on) { PACE = on; }
+
+// If a service says it is busy (429/503), wait a little and try once more.
+async function politeGet(queue, url, opts, http) {
+  const go = () => getJSON(url, opts, http);
+  try { return PACE ? await queue(go) : await go(); }
+  catch (e) {
+    if (e.status !== 429 && e.status !== 503) throw e;
+    if (PACE) await sleep(e.status === 429 ? 15000 : 3000);
+    return PACE ? queue(go) : go();
+  }
+}
+const mbGet = (pathAndQuery, http) => politeGet(mbQueue, MB + pathAndQuery, {}, http);
+const dGet = (url, opts, http) => politeGet(discogsQueue, url, opts, http);
 
 // ---------- helpers ----------
 function luceneEscape(s) { return String(s).replace(/([+\-&|!(){}\[\]^"~*?:\\/])/g, '\\$1'); }
@@ -166,7 +191,7 @@ async function coverUrls(mbid, rgid, http = request) {
 }
 
 async function download(url, http = request) {
-  const r = await http(url, { binary: true, timeout: 40000 });
+  const r = await http(url, { binary: true, timeout: 20000 });
   if (r.status !== 200 || !r.body || r.body.length < 500) return null;
   const type = String(r.headers['content-type'] || '');
   if (!/^image\//.test(type)) return null;
@@ -183,7 +208,7 @@ async function discogsFind(rec, token, http = request) {
   if (rec.catno) tries.push('catno=' + encodeURIComponent(rec.catno) + '&artist=' + encodeURIComponent(rec.artist || ''));
   tries.push('q=' + encodeURIComponent(((rec.artist || '') + ' ' + (rec.title || '')).trim()) + '&format=Vinyl');
   for (const t of tries) {
-    const d = await getJSON(DISCOGS + '/database/search?type=release&per_page=5&' + t, { headers: discogsHeaders(token) }, http);
+    const d = await dGet(DISCOGS + '/database/search?type=release&per_page=5&' + t, { headers: discogsHeaders(token) }, http);
     const hit = d && d.results && d.results[0];
     if (hit) return { id: String(hit.id), cover: hit.cover_image || '', title: hit.title || '' };
   }
@@ -209,7 +234,7 @@ async function prices(discogsId, token, http = request) {
   const h = { headers: discogsHeaders(token) };
   const id = encodeURIComponent(discogsId);
   try {
-    const s = await getJSON(DISCOGS + '/marketplace/price_suggestions/' + id, h, http);
+    const s = await dGet(DISCOGS + '/marketplace/price_suggestions/' + id, h, http);
     let any = false;
     if (s) for (const [k, label] of Object.entries(GRADES)) {
       const v = s[label] && s[label].value;
@@ -222,7 +247,7 @@ async function prices(discogsId, token, http = request) {
   }
   let masterId = null;
   try {
-    const rel = await getJSON(DISCOGS + '/releases/' + id + '?curr_abbr=USD', h, http);
+    const rel = await dGet(DISCOGS + '/releases/' + id + '?curr_abbr=USD', h, http);
     if (rel) {
       if (typeof rel.lowest_price === 'number' && rel.lowest_price > 0) out.lowest = round(rel.lowest_price);
       if (typeof rel.num_for_sale === 'number') out.forSale = rel.num_for_sale;
@@ -231,14 +256,14 @@ async function prices(discogsId, token, http = request) {
   } catch (e) { if (e.status === 401) throw e; }
   if (out.lowest == null) {
     try {
-      const st = await getJSON(DISCOGS + '/marketplace/stats/' + id + '?curr_abbr=USD', h, http);
+      const st = await dGet(DISCOGS + '/marketplace/stats/' + id + '?curr_abbr=USD', h, http);
       if (st && st.lowest_price && st.lowest_price.value > 0) out.lowest = round(st.lowest_price.value);
       if (st && typeof st.num_for_sale === 'number') out.forSale = st.num_for_sale;
     } catch (e) { /* ignore */ }
   }
   if (masterId) {
     try {
-      const m = await getJSON(DISCOGS + '/masters/' + encodeURIComponent(masterId) + '?curr_abbr=USD', h, http);
+      const m = await dGet(DISCOGS + '/masters/' + encodeURIComponent(masterId) + '?curr_abbr=USD', h, http);
       if (m && typeof m.lowest_price === 'number' && m.lowest_price > 0) out.anyLowest = round(m.lowest_price);
       if (m && typeof m.num_for_sale === 'number') out.anyForSale = m.num_for_sale;
     } catch (e) { /* ignore */ }
@@ -250,10 +275,10 @@ async function prices(discogsId, token, http = request) {
 
 // Settings › "Test my Discogs key": is the key accepted, and are condition prices available?
 async function testDiscogs(token, http = request) {
-  const me = await getJSON(DISCOGS + '/oauth/identity', { headers: discogsHeaders(token) }, http);
+  const me = await dGet(DISCOGS + '/oauth/identity', { headers: discogsHeaders(token) }, http);
   let conditionPrices = false, reason = '';
   try {
-    const s = await getJSON(DISCOGS + '/marketplace/price_suggestions/1', { headers: discogsHeaders(token) }, http);
+    const s = await dGet(DISCOGS + '/marketplace/price_suggestions/1', { headers: discogsHeaders(token) }, http);
     conditionPrices = !!(s && Object.keys(s).length);
   } catch (e) {
     if (e.status === 401) throw e;
@@ -303,4 +328,4 @@ function parseIdentify(reply) {
   return { artist: s(o.artist), title: s(o.title), year: s(o.year), label: s(o.label), catno: s(o.catalog_number), barcode: s(o.barcode), confidence: s(o.confidence) || 'low' };
 }
 
-module.exports = { request, search, details, coverUrls, download, discogsFind, prices, testDiscogs, identifyPhoto, parseIdentify, buildQuery, mapRelease, msToTime, GRADES };
+module.exports = { setPacing, request, search, details, coverUrls, download, discogsFind, prices, testDiscogs, identifyPhoto, parseIdentify, buildQuery, mapRelease, msToTime, GRADES };
