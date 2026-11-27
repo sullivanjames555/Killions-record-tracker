@@ -61,14 +61,45 @@ const MB_RELEASE = {
     assert.strictEqual(L.buildQuery({ text: '   ' }), '');
   });
 
-  await t('search puts vinyl pressings first', async () => {
+  await t('search shows only vinyl by default, everything when asked', async () => {
     const http = fakeHttp([['/release/?', json(MB_SEARCH)]]);
     const r = await L.search({ text: 'kind of blue' }, http);
-    assert.strictEqual(r.length, 2);
-    assert.strictEqual(r[0].mbid, 'lp-1');
+    assert.deepStrictEqual(r.map(x => x.mbid), ['lp-1']);
     assert.strictEqual(r[0].year, '1959');
     assert.strictEqual(r[0].catno, 'CL 1355');
-    assert.ok(http.calls[0].url.startsWith('https://musicbrainz.org/ws/2/release/?fmt=json'));
+    assert.ok(decodeURIComponent(http.calls[0].url).includes('AND format:vinyl'));
+    const all = await L.search({ text: 'kind of blue', recordType: 'all' }, fakeHttp([['/release/?', json(MB_SEARCH)]]));
+    assert.deepStrictEqual(all.map(x => x.mbid), ['lp-1', 'cd-1']);
+  });
+
+  const rel = (id, fmt, type) => ({ id, score: 90, title: 'Hound Dog', 'artist-credit': [{ name: 'Elvis Presley' }], date: '1956', media: [{ format: fmt }], 'release-group': { id: 'rg', 'primary-type': type } });
+  const MIXED = { releases: [rel('lp', '12" Vinyl', 'Album'), rel('s7', '7" Vinyl', 'Single'), rel('sv', 'Vinyl', 'Single'), rel('s12', '12" Vinyl', 'Single'), rel('cd', 'CD', 'Single'), rel('78', '10" Shellac', 'Single')] };
+
+  await t('7-inch singles only', async () => {
+    const r = await L.search({ text: 'hound dog', recordType: '7' }, fakeHttp([['/release/?', json(MIXED)]]));
+    assert.deepStrictEqual(r.map(x => x.mbid).sort(), ['s7', 'sv']);
+  });
+  await t('12-inch albums, 12-inch singles and 78s', async () => {
+    const ids = async t => (await L.search({ text: 'hound dog', recordType: t }, fakeHttp([['/release/?', json(MIXED)]]))).map(x => x.mbid).sort();
+    assert.deepStrictEqual(await ids('12lp'), ['lp']);
+    assert.deepStrictEqual(await ids('12s'), ['s12']);
+    assert.deepStrictEqual(await ids('78'), ['78']);
+  });
+  await t('when nothing of that kind exists, shows the others marked as another kind', async () => {
+    const r = await L.search({ text: 'hound dog', recordType: '10' }, fakeHttp([['/release/?', json({ releases: [rel('cd', 'CD', 'Album')] })]]));
+    assert.strictEqual(r.length, 1); assert.strictEqual(r[0].otherType, true);
+  });
+  await t('a search word MusicBrainz rejects falls back to the wide search', async () => {
+    let n = 0;
+    const http = async url => (++n === 1 ? json({ error: 'bad query' }, 400) : json(MIXED));
+    const r = await L.search({ text: 'hound dog', recordType: '7' }, http);
+    assert.strictEqual(n, 2); assert.ok(r.length >= 1);
+  });
+  await t('Discogs value look-up asks for the right kind first', async () => {
+    const http = fakeHttp([['database/search', json({ results: [] })]]);
+    await L.discogsFind({ artist: 'Elvis Presley', title: 'Hound Dog' }, 'T', http, '7');
+    assert.ok(http.calls[0].url.includes('format=7%22'));
+    assert.ok(http.calls[1].url.includes('format=Vinyl'));
   });
 
   await t('details reads songs by side, credits and the Discogs link', async () => {
@@ -182,7 +213,7 @@ const MB_RELEASE = {
   await t('retries once when a service is busy', async () => {
     let n = 0;
     const http = async () => (++n === 1 ? json({}, 503) : json({ releases: [] }));
-    const r = await L.search({ text: 'x' }, http);
+    const r = await L.search({ text: 'x', recordType: 'all' }, http);
     assert.deepStrictEqual(r, []); assert.strictEqual(n, 2);
   });
 

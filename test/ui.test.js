@@ -81,6 +81,19 @@ const fs = require('fs');
   await page.setViewportSize({ width: 1024, height: 700 });
   await page.click('[data-action="text-smaller"]'); await page.click('[data-action="text-smaller"]');
   await page.screenshot({ path: path.join(out, '12-small-window.png') });
+  // ---- record type ----
+  await page.click('[data-view="settings"]');
+  await page.click('[data-action="record-type"][data-v="7"]');
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(out, '19-settings-type.png') });
+  await page.click('[data-view="add"]');
+  const typeBanner = await page.textContent('.type-banner');
+  await page.fill('#nameq', 'Miles Davis - Kind of Blue');
+  await page.click('[data-form="name"] button');
+  await page.waitForSelector('.match');
+  const otherNote = await page.textContent('#add-right .check-note');
+  await page.screenshot({ path: path.join(out, '20-other-kinds.png') });
+  await page.click('[data-action="add-reset"]').catch(() => {});
   // ---- import a list ----
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.click('[data-action="text-bigger"]');
@@ -104,6 +117,6 @@ const fs = require('fs');
   const allTitles = await page.$$eval('.tile .t', t => t.map(x => x.textContent));
   await page.click('[data-view="help"]');
   await page.screenshot({ path: path.join(out, '13-help.png') });
-  console.log(JSON.stringify({ pendingShown, foundCount, runSummary, checkTiles, allTitles, needTiles, searchTiles, firstTitle, condValue, ownValue, copperTile, checked, testResult, errors }, null, 1));
+  console.log(JSON.stringify({ typeBanner, otherNote, pendingShown, foundCount, runSummary, checkTiles, allTitles, needTiles, searchTiles, firstTitle, condValue, ownValue, copperTile, checked, testResult, errors }, null, 1));
   await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

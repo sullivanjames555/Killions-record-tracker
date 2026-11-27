@@ -127,7 +127,7 @@ async function getPrices(rec) {
   let cover = '';
   try {
     if (!id) {
-      const hit = await lookup.discogsFind(rec, token);
+      const hit = await lookup.discogsFind(rec, token, undefined, store.data.settings.recordType);
       if (hit) { id = hit.id; cover = hit.cover; log('Discogs match for ' + label + ': release ' + id + ' (' + hit.title + ')'); }
     }
     if (!id) {
@@ -160,7 +160,8 @@ function registerIpc() {
     return { name, url: coverUrl(name) };
   });
 
-  handle('lookup:search', params => lookup.search(params || {}));
+  // Every search only shows the kind of record chosen in Settings, unless the screen asks for all kinds.
+  handle('lookup:search', params => lookup.search({ recordType: store.data.settings.recordType, ...(params || {}) }));
 
   handle('lookup:identifyPhoto', async dataUrl => {
     const key = store.getSecret('anthropicKey');
@@ -198,7 +199,7 @@ function registerIpc() {
     const token = store.getSecret('discogsToken');
     if (!out.coverFront && token && (rec.title || rec.discogsId)) {
       try {
-        const hit = await lookup.discogsFind(rec, token);
+        const hit = await lookup.discogsFind(rec, token, undefined, store.data.settings.recordType);
         if (hit) {
           out.discogsId = out.discogsId || hit.id;
           if (hit.cover && !/spacer\.gif/.test(hit.cover)) out.coverFront = await save(hit.cover);

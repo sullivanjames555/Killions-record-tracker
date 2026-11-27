@@ -3,6 +3,7 @@
 A large-print record collection program for Windows 8, 8.1, 10 and 11.
 
 - **Add a record** by dragging in a photo of the picture sleeve, choosing one from the computer, holding it up to the webcam, typing the name, or typing the barcode or catalog number.
+- **Only his kind of record**: in Settings choose 7-inch singles (45s), 12-inch LPs, 12-inch singles, 10-inch, 78s, any vinyl, or anything. Searches, list imports and value look-ups then only use that kind. If nothing of that kind exists, other kinds are shown, clearly marked, and *Not here? Show every kind of record* searches everything once.
 - **Import a list**: bring in a CSV saved from Excel, Google Sheets or a Discogs collection export. Every record is looked up automatically (see below).
 - **Sleeve pictures are fetched automatically** (front and back) from the free Cover Art Archive. Your own photo is used if there isn't one, and you can swap pictures at any time.
 - **"Do I have the picture sleeve?"** Every record is marked Have picture sleeve / Need picture sleeve. Use the *Need a picture sleeve* filter as a shopping list.
@@ -28,7 +29,7 @@ To publish a release: on GitHub open **Releases → Draft a new release**, type 
 2. Unzip this folder somewhere, for example `Documents\record-shelf`.
 3. Double-click **`Build-Installer.bat`**.
    The first run downloads the building blocks (a few minutes), runs the self-tests, then builds the installer.
-4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.2.0.exe`**.
+4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.3.0.exe`**.
 
 That one installer works on Windows 8, 8.1, 10 and 11, in both 32-bit and 64-bit versions.
 
@@ -36,7 +37,7 @@ To try the program without installing it, double-click **`Try-Without-Installing
 
 ## 2. Install it on the record collector's computer
 
-Copy `Killions-Record-Shelf-Setup-1.2.0.exe` over (on a USB stick, for example) and double-click it.
+Copy `Killions-Record-Shelf-Setup-1.3.0.exe` over (on a USB stick, for example) and double-click it.
 It installs without asking any questions, puts **Killion's Record Shelf** on the desktop and in the Start menu, and opens it.
 
 **"Windows protected your PC"**: Windows shows this for any program that isn't code-signed. Click **More info** and then **Run anyway**.

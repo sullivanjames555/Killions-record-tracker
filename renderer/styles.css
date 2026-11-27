@@ -275,3 +275,4 @@ a.link { color: var(--blue); font-weight: 700; }
 .badge.check svg { stroke-width: 2.6; }
 .banner { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; padding: .8rem 1rem; margin-bottom: 1rem; border-radius: 1rem; background: var(--blue-tint); border: 2px solid #C9D6F0; font-size: 1.05rem; }
 .banner .btn { margin-left: auto; min-height: 2.8rem; }
+.type-banner { margin-bottom: 1.2rem; }

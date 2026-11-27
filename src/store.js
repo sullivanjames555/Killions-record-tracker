@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const EMPTY = { version: 1, records: [], settings: { textSize: 2, claudeModel: 'claude-sonnet-5-5' }, secrets: {} };
+const EMPTY = { version: 1, records: [], settings: { textSize: 2, claudeModel: 'claude-sonnet-5-5', recordType: 'vinyl' }, secrets: {} };
 
 class Store {
   constructor(dataDir, crypt) {
@@ -100,7 +100,7 @@ class Store {
   }
 
   setSettings(s) {
-    const allowed = ['textSize', 'claudeModel', 'voiceRate'];
+    const allowed = ['textSize', 'claudeModel', 'voiceRate', 'recordType'];
     for (const k of allowed) if (s[k] !== undefined) this.data.settings[k] = s[k];
     if (s.discogsToken !== undefined) this.setSecret('discogsToken', String(s.discogsToken).trim());
     if (s.anthropicKey !== undefined) this.setSecret('anthropicKey', String(s.anthropicKey).trim());

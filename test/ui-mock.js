@@ -32,9 +32,10 @@
       ];
       const hits = db.filter(d => want.includes(d.title.toLowerCase()) || (d.catno && want.includes(d.catno.toLowerCase())));
       if (hits.length || !/kind of blue|miles/.test(want)) return hits;
+      const other = settings.recordType === '7' && !q.recordType;
       return [
       { mbid: 'x1', title: 'Kind of Blue', artist: 'Miles Davis', year: '1959', label: 'Columbia', catno: 'CL 1355', country: 'US', format: '12" Vinyl', thumb: svg('#0b2a5c', '#3a6fc4', '#ffffff') },
-      { mbid: 'x2', title: 'Kind of Blue', artist: 'Miles Davis', year: '1971', label: 'Columbia', catno: 'PC 8163', country: 'US', format: '12" Vinyl', thumb: 'https://invalid.example/none.jpg' }]; },
+      { mbid: 'x2', title: 'Kind of Blue', artist: 'Miles Davis', year: '1971', label: 'Columbia', catno: 'PC 8163', country: 'US', format: '12" Vinyl', thumb: 'https://invalid.example/none.jpg' }].map(m => (other ? { ...m, otherType: true } : m)); },
     identifyPhoto: async () => null,
     details: async mbid => { await wait(300);
       if (mbid !== 'x1' && mbid !== 'x2') return { mbid, title: { e1: 'Elvis', f1: 'Foo Fighters', b1: 'Abbey Road' }[mbid], artist: { e1: 'Elvis Presley', f1: 'Foo Fighters', b1: 'The Beatles' }[mbid], year: '1956', label: 'RCA Victor', country: 'US', format: '12" Vinyl', discogsId: '77', tracks: [T('Side A', 'A1', 'Blue Suede Shoes', '1:58')], credits: [] };

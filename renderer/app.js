@@ -15,6 +15,12 @@
   ];
   const condLabel = id => (COND.find(c => c.id === id) || COND[1]).label;
   const TEXT_SIZES = { 1: '16px', 2: '18px', 3: '21px' };
+  // Keep in step with TYPES in src/lookup.js
+  const RECORD_TYPES = [
+    ['7', '7-inch singles (45s)', '7" Vinyl'], ['12lp', '12-inch albums (LPs)', '12" Vinyl'], ['12s', '12-inch singles', '12" Vinyl'],
+    ['10', '10-inch records', '10" Vinyl'], ['78', '78s (shellac)', '10" Shellac'], ['vinyl', 'Any vinyl record', 'Vinyl'], ['all', 'Anything (CDs and tapes too)', '']
+  ];
+  const typeInfo = id => RECORD_TYPES.find(t => t[0] === id) || RECORD_TYPES[5];
 
   const S = {
     records: [], settings: {}, version: '',
@@ -502,6 +508,7 @@
       '<div class="seg" role="group" aria-label="Where should it go" style="min-width: 22rem">' +
       '<button data-action="for-list" data-id="collection" aria-pressed="' + !wish + '">I own it</button>' +
       '<button data-action="for-list" data-id="wish" aria-pressed="' + wish + '">I want it</button></div></div>' +
+      '<div class="banner type-banner"><span>Searching for: <strong>' + esc(typeInfo(S.settings.recordType || 'vinyl')[1]) + '</strong></span><button class="btn" data-view="settings">Change</button></div>' +
       '<div class="add-wrap"><section class="add-left">' +
       '<div class="step"><div class="step-num' + (a.photo ? ' done' : '') + '">1</div><h2>Show us the front of the sleeve</h2></div>' +
       '<div class="drop" data-drop="front">' + front + '</div>' +
@@ -533,15 +540,20 @@
           '<p style="font-size:1.1rem;margin:0">' + esc(a.msg || 'We saved your photo.') + '</p>' +
           '<p style="font-size:1.1rem;margin:0">Type the artist and album, or the barcode, on the left and press <strong>Find it</strong>.</p>' +
           (!S.settings.hasClaude ? '<p class="muted" style="margin:0">Tip: to have photos read for you automatically, add an Anthropic key in Settings.</p>' : '');
-      case 'matches':
+      case 'matches': {
+        const other = a.matches.length && a.matches[0].otherType;
+        const kind = typeInfo(S.settings.recordType || 'vinyl')[1];
         return '<div class="step"><div class="step-num">2</div><h2>Which one is yours?</h2></div>' +
-          '<p class="muted" style="margin:0">Records were made in many versions. Pick the one that matches your label and year.</p>' +
+          (other ? '<p class="check-note">No ' + esc(kind.toLowerCase()) + ' were found for that, so here are other kinds. Check the format on each one.</p>'
+            : '<p class="muted" style="margin:0">Records were made in many versions. Pick the one that matches your label and year.</p>') +
           a.matches.map(m => '<button class="match" data-action="pick-match" data-id="' + esc(m.mbid) + '">' +
             '<img src="' + esc(safeUrl(m.thumb)) + '" alt="" loading="lazy" data-hide-broken>' +
             '<span><span class="mt">' + esc(m.title) + '</span><br><span class="ma">' + esc(m.artist) + '</span><br>' +
             '<span class="mm">' + esc([m.year, m.label, m.catno, m.country, m.format].filter(Boolean).join(' · ')) + '</span></span>' +
             '<span class="pick">This one</span></button>').join('') +
-          '<button class="btn" data-action="manual">None of these — I’ll type it in myself</button>';
+          '<button class="btn" data-action="manual">None of these — I’ll type it in myself</button>' +
+          (!other && (S.settings.recordType || 'vinyl') !== 'all' && !a.allKinds ? '<button class="btn" data-action="search-all-kinds">Not here? Show every kind of record</button>' : '');
+      }
       case 'loading-edit': return loader('Opening the form…');
       case 'error':
         return '<h2>Something went wrong</h2><p style="font-size:1.1rem;margin:0">' + esc(a.msg) + '</p>' +
@@ -584,7 +596,9 @@
   }
   function focusName() { const n = document.getElementById('nameq'); if (n) n.focus(); }
 
-  async function runSearch(tries, notFoundMsg) {
+  async function runSearch(tries, notFoundMsg, allKinds) {
+    S.add.lastTries = tries; S.add.lastMsg = notFoundMsg; S.add.allKinds = !!allKinds;
+    if (allKinds) tries = tries.map(t => ({ ...t, recordType: 'all' }));
     setStage('searching');
     try {
       for (const t of tries) {
@@ -655,7 +669,7 @@
 
   async function openManual() {
     setStage('loading-edit');
-    const rec = { list: S.add.forList, condition: 'vgp', haveCover: null, title: '', artist: '' };
+    const rec = { list: S.add.forList, condition: 'vgp', haveCover: null, title: '', artist: '', format: typeInfo(S.settings.recordType || 'vinyl')[2] };
     const code = (S.add.code || '').trim();
     if (code) { if (/^[\d\s-]{8,}$/.test(code)) rec.barcode = code.replace(/\D/g, ''); else rec.catno = code; }
     const parts = (S.add.name || '').split(/\s+[-–—]\s+/);
@@ -799,7 +813,8 @@
     } catch (e) { matches = []; toast(e.message, true); }
     const body = document.getElementById('fo-body');
     if (body) body.innerHTML = matches.length
-      ? '<p class="muted" style="margin:0 0 .6rem">Pick the one that matches your label and year.</p>' + matches.map(m => '<button class="match" data-modal="pick:' + esc(m.mbid) + '">' +
+      ? (matches[0].otherType ? '<p class="check-note" style="margin-bottom:.6rem">No ' + esc(typeInfo(S.settings.recordType || 'vinyl')[1].toLowerCase()) + ' were found, so here are other kinds. Check the format.</p>'
+        : '<p class="muted" style="margin:0 0 .6rem">Pick the one that matches your label and year.</p>') + matches.map(m => '<button class="match" data-modal="pick:' + esc(m.mbid) + '">' +
         '<img src="' + esc(safeUrl(m.thumb)) + '" alt="" loading="lazy" data-hide-broken><span><span class="mt">' + esc(m.title) + '</span><br><span class="ma">' + esc(m.artist) + '</span><br>' +
         '<span class="mm">' + esc([m.year, m.label, m.catno, m.country, m.format].filter(Boolean).join(' · ')) + '</span></span><span class="pick">This one</span></button>').join('')
       : '<p>Nothing was found. Check the spelling of the album and artist, or add the catalog number, and try again.</p>';
@@ -990,7 +1005,7 @@
     if (r.title) tries.push({ text: [r.artist, r.title].filter(Boolean).join(' ') });
     let best = null;
     for (const t of tries) {
-      const cands = await api.search(t);
+      const cands = (await api.search(t)).filter(c => !c.otherType);
       best = CI.pickBest(r, cands);
       if (best) break;
     }
@@ -1060,6 +1075,11 @@
     const s = S.settings;
     const status = on => '<span class="key-status ' + (on ? 'on' : 'off') + '">' + (on ? 'Turned on' : 'Not set up yet') + '</span>';
     main.innerHTML = '<div class="page-head"><h1>Settings</h1></div>' +
+      '<section class="panel"><h2>What kind of records does he collect?</h2>' +
+      '<p>Searches only show this kind, and values are looked up for this kind. It makes finding the right record much quicker.</p>' +
+      '<div class="choice-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
+      RECORD_TYPES.map(([id, label]) => '<button class="choice" data-action="record-type" data-v="' + id + '" aria-pressed="' + ((s.recordType || 'vinyl') === id) + '">' + esc(label) + '</button>').join('') +
+      '</div></section>' +
       '<section class="panel"><h2>Text size</h2><div class="choice-grid" style="grid-template-columns:repeat(3,1fr)">' +
       [[1, 'Normal'], [2, 'Large'], [3, 'Extra large']].map(([n, l]) => '<button class="choice" data-action="text-size" data-v="' + n + '" aria-pressed="' + ((s.textSize || 2) === n) + '">' + l + '</button>').join('') +
       '</div><p class="muted">You can also hold Ctrl and press + or − to zoom.</p></section>' +
@@ -1096,6 +1116,7 @@
       ['How is the value worked out?', 'From Discogs, the biggest record marketplace. Best is its price for the shape you chose (this needs Seller Settings filled in on the Discogs account). Otherwise it shows the cheapest copy for sale now, or the cheapest copy of any version of that album. You can always type your own value instead. Values are a guide, not an appraisal.'],
       ['How do I change a record\u2019s details?', 'Click the record, then press "Edit all the details". Change anything you like, then press the yellow Save button at the bottom. Nothing changes until you press Save.'],
       ['A record has no value. What can I do?', 'Open Settings and press "Test my Discogs key". Then click the record, press "Edit all the details", check the album name and artist, and press "Check the value now". If nobody is selling it, type your own value.'],
+      ['Searches show the wrong kind of record.', 'Go to Settings and choose what kind of records he collects, for example 7-inch singles (45s). Searches then only show that kind. If a record isn\u2019t found, press "Not here? Show every kind of record".'],
       ['Can I bring in a list I already have?', 'Yes. Save the list from Excel or Google Sheets as a CSV file, then press "Import a list" on the left. Each record is looked up for its songs, sleeve pictures and value. Any that can\u2019t be matched for sure are marked "Check this one".'],
       ['The words are too small.', 'Press "A +" at the bottom left, or choose Extra large in Settings.'],
       ['Can it read a record out loud?', 'Yes. Click a record and press "Read it to me".'],
@@ -1177,6 +1198,7 @@
     'webcam': () => webcam({ type: 'add-front' }),
     'pick-match': el => { document.querySelectorAll('.match').forEach(b => { b.disabled = true; }); return pickMatch(el.dataset.id); },
     'manual': () => openManual(),
+    'search-all-kinds': () => runSearch(S.add.lastTries || [], S.add.lastMsg, true),
     'edit': el => { const r = byId(el.dataset.id); if (r) openEditor(r, { isNew: false }); },
     'edit-choice': el => {
       const k = el.dataset.k, raw = el.dataset.v;
@@ -1253,6 +1275,10 @@
     'text-smaller': () => setTextSize((S.settings.textSize || 2) - 1),
     'text-bigger': () => setTextSize((S.settings.textSize || 2) + 1),
     'text-size': el => setTextSize(Number(el.dataset.v)),
+    'record-type': async el => {
+      try { S.settings = await api.saveSettings({ recordType: el.dataset.v }); toast('Searching for ' + typeInfo(el.dataset.v)[1].toLowerCase()); renderSettings(); }
+      catch (e) { toast(e.message, true); }
+    },
     'clear-key': async el => {
       try { S.settings = await api.saveSettings({ [el.dataset.id]: '' }); toast('Key removed'); renderSettings(); } catch (e) { toast(e.message, true); }
     },
