@@ -2,7 +2,7 @@
 
 A large-print record collection program for Windows 8, 8.1, 10 and 11.
 
-- **Add a record** by dragging in a photo of the picture sleeve, choosing one from the computer, holding it up to the webcam, typing the name, or typing the barcode or catalog number.
+- **Add a record** with one big search box at the top: type the artist and title, the number printed on the label (like `47-6604`), or the barcode, then press *This one*. If it can't be found, *Type it in myself* opens the full form, where you can add your own photo of the sleeve from the computer, the webcam, or by dragging it in.
 - **Only his kind of record**: in Settings choose 7-inch singles (45s), 12-inch LPs, 12-inch singles, 10-inch, 78s, any vinyl, or anything. Searches, list imports and value look-ups then only use that kind. If nothing of that kind exists, other kinds are shown, clearly marked, and *Not here? Show every kind of record* searches everything once.
 - **Import a list**: bring in a CSV saved from Excel, Google Sheets or a Discogs collection export. Every record is looked up automatically (see below).
 - **Sleeve pictures are fetched automatically** (front and back) from the free Cover Art Archive. Your own photo is used if there isn't one, and you can swap pictures at any time.
@@ -29,7 +29,7 @@ To publish a release: on GitHub open **Releases → Draft a new release**, type 
 2. Unzip this folder somewhere, for example `Documents\record-shelf`.
 3. Double-click **`Build-Installer.bat`**.
    The first run downloads the building blocks (a few minutes), runs the self-tests, then builds the installer.
-4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.3.0.exe`**.
+4. When it finishes, the `dist` folder opens with **`Killions-Record-Shelf-Setup-1.4.0.exe`**.
 
 That one installer works on Windows 8, 8.1, 10 and 11, in both 32-bit and 64-bit versions.
 
@@ -37,7 +37,7 @@ To try the program without installing it, double-click **`Try-Without-Installing
 
 ## 2. Install it on the record collector's computer
 
-Copy `Killions-Record-Shelf-Setup-1.3.0.exe` over (on a USB stick, for example) and double-click it.
+Copy `Killions-Record-Shelf-Setup-1.4.0.exe` over (on a USB stick, for example) and double-click it.
 It installs without asking any questions, puts **Killion's Record Shelf** on the desktop and in the Start menu, and opens it.
 
 **"Windows protected your PC"**: Windows shows this for any program that isn't code-signed. Click **More info** and then **Run anyway**.
@@ -49,7 +49,8 @@ To avoid the warning, sign the installer with a code-signing certificate. Set `C
 2. Go to **Settings → Developers** (<https://www.discogs.com/settings/developers>) and press **Generate new token**.
 3. In Killion's Record Shelf, open **Settings**, paste the token under *Record values*, and press **Save**.
 4. Press **Test my Discogs key**. It says whether the key works and whether values by condition are turned on.
-5. For values by condition (Like new, Very good, Good, Worn), fill in **Seller Settings** on the Discogs account once (<https://www.discogs.com/settings/seller>). You never have to sell anything.
+5. The Discogs key is encrypted with Windows' own data protection (DPAPI), stays on that computer, and is never copied into backups.
+6. For values by condition (Like new, Very good, Good, Worn), fill in **Seller Settings** on the Discogs account once (<https://www.discogs.com/settings/seller>). You never have to sell anything.
 
 The app looks for a value in this order, and labels which one it is showing:
 
@@ -70,14 +71,6 @@ Each look-up is written to `lookup.log` in the data folder (Settings → *Open t
    - The look-up takes about 4 seconds a record, or about 9 with values. You can keep using the app, or press **Stop for now** and **Continue** another day.
    - Barcodes and catalog numbers give the surest matches. A record that can't be matched for sure keeps what was in the list and is marked **Check this one**. Open it, press **Edit all the details**, then **Find this record online**.
    - Records already on the shelf are skipped.
-
-## 4. Optional: read photos automatically
-
-With an **Anthropic API key** (from the Claude Console), a photo of the picture sleeve is enough. Claude reads the artist, title, catalog number and barcode, and the app finds the record.
-Each photo costs a small amount, usually around a cent. Paste the key under *Read photos automatically* in Settings.
-Without a key, photos are still saved as sleeve pictures and you type the name or barcode instead.
-
-Keys are encrypted with Windows' own data protection (DPAPI), stay on that computer, and are never copied into backups.
 
 ## Where things are saved
 
@@ -105,12 +98,12 @@ npm run dist       # build the NSIS installer (x64 + ia32) into dist\
 
 - `main.js`: window, security settings, and the bridge to look-ups and files
 - `preload.js`: the small, safe set of functions the screen is allowed to call
-- `src/lookup.js`: MusicBrainz search and details, Cover Art Archive, Discogs prices, optional Claude photo reading
+- `src/lookup.js`: MusicBrainz search and details, Cover Art Archive, Discogs prices
 - `src/store.js`: JSON storage, cover files, encrypted keys, backup and restore
 - `renderer/`: the interface (plain HTML, CSS and JavaScript)
 - `test/`: offline tests, plus `ui.test.js` / `ui-mock.js` to click through the screen in a browser with sample data
 
-**Why Electron 22:** it is the last Electron version that runs on Windows 7, 8 and 8.1. It no longer gets security updates. That is a small risk for an app that only contacts MusicBrainz, the Cover Art Archive, Discogs and Anthropic, and never shows outside web pages.
+**Why Electron 22:** it is the last Electron version that runs on Windows 7, 8 and 8.1. It no longer gets security updates. That is a small risk for an app that only contacts MusicBrainz, the Cover Art Archive and Discogs, and never shows outside web pages.
 If every computer is on Windows 10 or 11, change `"electron"` in `package.json` to a current version and rebuild.
 
 Record details come from MusicBrainz (CC0) and pictures from the Cover Art Archive; values come from the Discogs API. MusicBrainz asks apps to make no more than one request per second, and the app keeps to that.

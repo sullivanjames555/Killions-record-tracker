@@ -183,6 +183,8 @@
       const dataUrl = await readImage(f);
       if (z.dataset.drop === 'front') onFrontPhoto(dataUrl);
       else if (z.dataset.drop === 'back') { S.add.back = { dataUrl }; renderAdd(); }
+      else if (z.dataset.drop === 'edit-front') setEditPhoto('front', dataUrl);
+      else if (z.dataset.drop === 'edit-back') setEditPhoto('back', dataUrl);
     } catch (err) { toast(err.message, true); }
   });
 
@@ -196,7 +198,7 @@
       return;
     }
     const stop = () => stream.getTracks().forEach(t => t.stop());
-    const p = modal('<h2>Hold the picture sleeve up to the camera</h2><div class="camera"><video autoplay playsinline muted></video>' +
+    const p = modal('<h2>Hold the sleeve up to the camera</h2><div class="camera"><video autoplay playsinline muted></video>' +
       '<p class="muted">Fill the screen with the front of the sleeve, then press the yellow button.</p>' +
       '<div class="row"><button class="btn yellow tall" data-modal="snap">' + icon.camera + 'Take the picture</button>' +
       '<button class="btn" data-modal="cancel">Cancel</button></div></div>', { wide: true, onClose: () => {} });
@@ -496,54 +498,37 @@
   function renderAdd() {
     const a = S.add;
     const wish = a.forList === 'wish';
-    const front = a.photo
-      ? '<img class="preview" src="' + esc(a.photo.dataUrl) + '" alt="Your photo of the picture sleeve"><div class="drop-title">Got your photo</div>' +
-        '<button class="btn" data-action="pick-photo">' + icon.folder + 'Use a different photo</button>'
-      : '<div class="sleeve-art bob" aria-hidden="true"></div><div class="drop-title">Drag a photo of the picture sleeve here</div><div class="muted">or</div>' +
-        '<div class="row" style="justify-content:center"><button class="btn primary tall" data-action="pick-photo">' + icon.folder + 'Choose a photo on my computer</button>' +
-        '<button class="btn blue-line tall" data-action="webcam">' + icon.camera + 'Use my webcam</button></div>';
     main.innerHTML =
       '<div class="page-head"><div><h1>' + (wish ? 'Add to my wish list' : 'Add a record') + '</h1>' +
-      '<div class="sub">Show us the picture sleeve and we’ll fill in the rest.</div></div>' +
+      '<div class="sub">Type the name or the number on the record, then pick it from the list.</div></div>' +
       '<div class="seg" role="group" aria-label="Where should it go" style="min-width: 22rem">' +
       '<button data-action="for-list" data-id="collection" aria-pressed="' + !wish + '">I own it</button>' +
       '<button data-action="for-list" data-id="wish" aria-pressed="' + wish + '">I want it</button></div></div>' +
-      '<div class="banner type-banner"><span>Searching for: <strong>' + esc(typeInfo(S.settings.recordType || 'vinyl')[1]) + '</strong></span><button class="btn" data-view="settings">Change</button></div>' +
-      '<div class="add-wrap"><section class="add-left">' +
-      '<div class="step"><div class="step-num' + (a.photo ? ' done' : '') + '">1</div><h2>Show us the front of the sleeve</h2></div>' +
-      '<div class="drop" data-drop="front">' + front + '</div>' +
-      '<div class="back-slot" data-drop="back">' +
-      (a.back ? '<img class="thumb" src="' + esc(a.back.dataUrl) + '" alt="Your photo of the back">' : '<div class="thumb" aria-hidden="true"></div>') +
-      '<div style="flex:1"><div style="font-weight:700">' + (a.back ? 'Back of sleeve added' : 'Add the back of the sleeve too (optional)') + '</div>' +
-      '<div class="small muted">Helps if we can’t find a picture of the back.</div></div>' +
-      '<button class="btn" data-action="pick-back">' + (a.back ? 'Change' : 'Add photo') + '</button></div>' +
-      '<button class="btn blue-line wide" data-view="import">' + '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16"/></svg>' + 'Have a whole list already? Import it from a spreadsheet</button>' +
-      '<div class="label muted" style="margin-top:.3rem">No photo? Try another way — we’ll find the sleeve picture for you</div>' +
-      '<div class="other-ways">' +
-      '<form class="way" data-form="name"><label for="nameq" class="label">Type the name</label>' +
-      '<input id="nameq" class="input" value="' + esc(a.name) + '" placeholder="Artist and album" autocomplete="off">' +
-      '<button class="btn primary" type="submit">' + icon.search + 'Find it</button></form>' +
-      '<form class="way" data-form="code"><label for="codeq" class="label">Barcode or catalog number</label>' +
-      '<input id="codeq" class="input" value="' + esc(a.code) + '" placeholder="On the back or the spine" autocomplete="off">' +
-      '<button class="btn primary" type="submit">' + icon.search + 'Find it</button></form></div>' +
-      '</section><section class="add-right" id="add-right" aria-live="polite">' + addRight() + '</section></div>';
+      '<form class="search-panel" data-form="search" role="search">' +
+      '<label for="addq" class="search-label">What record are you looking for?</label>' +
+      '<div class="search-row"><div class="search big">' + icon.search +
+      '<input id="addq" type="search" value="' + esc(a.name) + '" placeholder="For example: Elvis Presley Hound Dog" autocomplete="off" aria-describedby="addq-help"></div>' +
+      '<button class="btn primary tall find-btn" type="submit">' + icon.search + 'Find it</button></div>' +
+      '<div id="addq-help" class="search-help">Artist and title, <strong>or</strong> the number printed on the label or sleeve (like <strong>47-6604</strong>), <strong>or</strong> the barcode.' +
+      '</div><div class="type-line">Searching for: <strong>' + esc(typeInfo(S.settings.recordType || 'vinyl')[1]) + '</strong> <button class="link-btn" type="button" data-view="settings">Change</button></div>' +
+      '</form>' +
+      '<section class="add-results" id="add-right" aria-live="polite">' + addRight() + '</section>' +
+      '<div class="add-more">' +
+      '<button class="btn tall" data-action="manual">' + icon.pencil + 'Type it in myself (with my own photo)</button>' +
+      '<button class="btn tall" data-view="import"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16"/></svg>Import a whole list</button>' +
+      '</div>';
+    if (a.stage === 'start') { const q = document.getElementById('addq'); if (q) q.focus(); }
   }
 
   function addRight() {
     const a = S.add;
     switch (a.stage) {
-      case 'identifying': return loader('Looking at your photo…');
       case 'searching': return loader('Searching for your record…');
       case 'loading': return loader('Getting the songs and details…');
-      case 'needName':
-        return '<div class="step"><div class="step-num">2</div><h2>Now tell us the name</h2></div>' +
-          '<p style="font-size:1.1rem;margin:0">' + esc(a.msg || 'We saved your photo.') + '</p>' +
-          '<p style="font-size:1.1rem;margin:0">Type the artist and album, or the barcode, on the left and press <strong>Find it</strong>.</p>' +
-          (!S.settings.hasClaude ? '<p class="muted" style="margin:0">Tip: to have photos read for you automatically, add an Anthropic key in Settings.</p>' : '');
       case 'matches': {
         const other = a.matches.length && a.matches[0].otherType;
         const kind = typeInfo(S.settings.recordType || 'vinyl')[1];
-        return '<div class="step"><div class="step-num">2</div><h2>Which one is yours?</h2></div>' +
+        return '<h2>Which one is yours?</h2>' +
           (other ? '<p class="check-note">No ' + esc(kind.toLowerCase()) + ' were found for that, so here are other kinds. Check the format on each one.</p>'
             : '<p class="muted" style="margin:0">Records were made in many versions. Pick the one that matches your label and year.</p>') +
           a.matches.map(m => '<button class="match" data-action="pick-match" data-id="' + esc(m.mbid) + '">' +
@@ -551,17 +536,20 @@
             '<span><span class="mt">' + esc(m.title) + '</span><br><span class="ma">' + esc(m.artist) + '</span><br>' +
             '<span class="mm">' + esc([m.year, m.label, m.catno, m.country, m.format].filter(Boolean).join(' · ')) + '</span></span>' +
             '<span class="pick">This one</span></button>').join('') +
-          '<button class="btn" data-action="manual">None of these — I’ll type it in myself</button>' +
-          (!other && (S.settings.recordType || 'vinyl') !== 'all' && !a.allKinds ? '<button class="btn" data-action="search-all-kinds">Not here? Show every kind of record</button>' : '');
+          '<div class="row">' + (!other && (S.settings.recordType || 'vinyl') !== 'all' && !a.allKinds ? '<button class="btn" data-action="search-all-kinds">Not here? Show every kind of record</button>' : '') +
+          '<button class="btn" data-action="manual">None of these — I’ll type it in myself</button></div>';
       }
       case 'loading-edit': return loader('Opening the form…');
       case 'error':
         return '<h2>Something went wrong</h2><p style="font-size:1.1rem;margin:0">' + esc(a.msg) + '</p>' +
           '<div class="row"><button class="btn primary" data-action="add-reset">Start again</button><button class="btn" data-action="manual">Type it in myself</button></div>';
+      case 'nothing':
+        return '<h2>Nothing was found</h2><p style="font-size:1.1rem;margin:0">' + esc(a.msg) + '</p>' +
+          '<div class="row">' + ((S.settings.recordType || 'vinyl') !== 'all' && !a.allKinds ? '<button class="btn" data-action="search-all-kinds">Search every kind of record</button>' : '') +
+          '<button class="btn" data-action="manual">Type it in myself</button></div>';
       default:
-        return '<div class="step"><div class="step-num">2</div><h2>Check it’s right</h2></div>' +
-          '<div class="empty" style="padding:1.5rem .5rem"><div class="disc" aria-hidden="true" style="width:6rem;height:6rem"></div>' +
-          '<p>Your record will show up here with its sleeve picture, songs and value.</p></div>';
+        return '<div class="empty start-empty"><div class="disc spin" aria-hidden="true"></div>' +
+          '<p>Your record will show up here. Pick it and we’ll fill in the songs, sleeve picture and value.</p></div>';
     }
   }
 
@@ -574,27 +562,18 @@
     if (stage !== was && stage !== 'start') r.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  async function onFrontPhoto(dataUrl) {
-    S.add.photo = { dataUrl };
-    S.add.matches = []; S.add.draft = null;
-    if (S.view !== 'add') go('add'); else renderAdd();
-    if (!S.settings.hasClaude) { setStage('needName', { msg: 'We saved your photo.' }); focusName(); return; }
-    setStage('identifying');
-    let id = null;
-    try { id = await api.identifyPhoto(dataUrl); } catch (e) { setStage('needName', { msg: e.message }); focusName(); return; }
-    if (!id || !(id.title || id.barcode || id.catno)) { setStage('needName', { msg: 'We couldn’t read the name from the photo.' }); focusName(); return; }
-    S.add.name = [id.artist, id.title].filter(Boolean).join(' ');
-    S.add.code = id.barcode || id.catno || '';
-    const nameEl = document.getElementById('nameq'); if (nameEl) nameEl.value = S.add.name;
-    const codeEl = document.getElementById('codeq'); if (codeEl) codeEl.value = S.add.code;
-    const tries = [];
-    if (id.barcode) tries.push({ barcode: id.barcode });
-    if (id.catno) tries.push({ catno: id.catno });
-    if (id.title) tries.push({ artist: id.artist, title: id.title });
-    if (id.title) tries.push({ text: S.add.name });
-    await runSearch(tries, 'We read “' + S.add.name + '” but couldn’t find it in the music database.');
+  // One box for everything: a barcode (only digits, 8 or more), a catalog number
+  // (short, with digits, like "47-6604" or "LPM-1382"), or artist and title words.
+  function searchTries(t) {
+    const compact = t.replace(/[\s-]/g, '');
+    if (/^\d{8,14}$/.test(compact)) return [{ barcode: compact }, { catno: t }];
+    const words = t.split(/\s+/).length;
+    if (/\d/.test(t) && words <= 2 && t.length <= 16 && !/^(19|20)\d\d$/.test(t)) return [{ catno: t }, { text: t }];
+    const parts = t.split(/\s+[-–—]\s+/);
+    return parts.length === 2 ? [{ artist: parts[0], title: parts[1] }, { text: t }] : [{ text: t }];
   }
-  function focusName() { const n = document.getElementById('nameq'); if (n) n.focus(); }
+
+  function focusName() { const n = document.getElementById('addq'); if (n) n.focus(); }
 
   async function runSearch(tries, notFoundMsg, allKinds) {
     S.add.lastTries = tries; S.add.lastMsg = notFoundMsg; S.add.allKinds = !!allKinds;
@@ -605,7 +584,7 @@
         const m = await api.search(t);
         if (m && m.length) { setStage('matches', { matches: m }); return; }
       }
-      setStage(S.add.photo ? 'needName' : 'error', { msg: notFoundMsg || 'Nothing was found. Check the spelling, or try the barcode.' });
+      setStage('nothing', { msg: notFoundMsg || 'Check the spelling, or try the number printed on the label.' });
     } catch (e) { setStage('error', { msg: e.message }); }
   }
 
@@ -622,8 +601,6 @@
       const d = await api.details(mbid);
       if (mine !== ticket || S.view !== 'add') return;
       const rec = { ...d, list: S.add.forList, condition: 'vgp', haveCover: null };
-      await attachAddPhotos(rec);
-      if (mine !== ticket || S.view !== 'add') return;
       openEditor(rec, { isNew: true, fromLookup: true });
       fillInBackground();
     } catch (e) {
@@ -654,27 +631,15 @@
     }
   }
 
-  // Photos taken on the Add page become the record's pictures (unless a cleaner one was found online).
-  async function attachAddPhotos(rec) {
-    if (S.add.photo) {
-      const img = await api.saveImage(S.add.photo.dataUrl);
-      rec.userPhoto = img.name; rec.photoUrl = img.url;
-      if (!rec.coverFront) { rec.coverFront = img.name; rec.frontUrl = img.url; rec.coverSource = 'photo'; }
-    }
-    if (S.add.back && !rec.coverBack) {
-      const img = await api.saveImage(S.add.back.dataUrl);
-      rec.coverBack = img.name; rec.backUrl = img.url;
-    }
-  }
-
   async function openManual() {
     setStage('loading-edit');
     const rec = { list: S.add.forList, condition: 'vgp', haveCover: null, title: '', artist: '', format: typeInfo(S.settings.recordType || 'vinyl')[2] };
-    const code = (S.add.code || '').trim();
-    if (code) { if (/^[\d\s-]{8,}$/.test(code)) rec.barcode = code.replace(/\D/g, ''); else rec.catno = code; }
-    const parts = (S.add.name || '').split(/\s+[-–—]\s+/);
-    if (parts.length === 2) { rec.artist = parts[0]; rec.title = parts[1]; } else rec.title = S.add.name || '';
-    try { await attachAddPhotos(rec); } catch (e) { toast(e.message, true); }
+    const typed = (S.add.name || '').trim();
+    const first = typed ? searchTries(typed)[0] : {};
+    if (first.barcode) rec.barcode = first.barcode;
+    else if (first.catno) rec.catno = first.catno;
+    else if (first.artist) { rec.artist = first.artist; rec.title = first.title; }
+    else rec.title = typed;
     openEditor(rec, { isNew: true, fromLookup: false });
   }
 
@@ -704,13 +669,16 @@
     const front = safeUrl(r.frontUrl || r.photoUrl), back = safeUrl(r.backUrl);
     const src = r.coverSource === 'photo' ? 'Your own photo' : (r.frontUrl ? 'Found automatically' : '');
     return '<div class="label">Front of sleeve</div>' +
-      (front ? '<img class="cover" src="' + esc(front) + '" alt="Front of sleeve">' : '<div class="cover cover-blank" aria-hidden="true"></div>') +
+      '<div data-drop="edit-front">' + (front ? '<img class="cover" src="' + esc(front) + '" alt="Front of sleeve">' : '<div class="cover cover-blank" aria-hidden="true"></div>') + '</div>' +
       (src ? '<div class="small muted">' + esc(src) + '</div>' : '') +
-      '<div class="row">' + '<button class="btn" type="button" data-action="edit-photo" data-side="front">' + icon.folder + (front ? 'Change picture' : 'Add a picture') + '</button>' +
+      '<div class="row">' + '<button class="btn" type="button" data-action="edit-photo" data-side="front">' + icon.folder + (front ? 'Change picture' : 'Choose a photo') + '</button>' +
+      '<button class="btn" type="button" data-action="edit-webcam" data-side="front">' + icon.camera + 'Webcam</button>' +
       (!front && r.mbid ? '<button class="btn" type="button" data-action="edit-find-cover">' + icon.refresh + 'Find it for me</button>' : '') + '</div>' +
       '<div class="label" style="margin-top:.6rem">Back of sleeve</div>' +
-      (back ? '<img class="cover back-cover" src="' + esc(back) + '" alt="Back of sleeve">' : '<div class="cover cover-blank back-cover" aria-hidden="true"></div>') +
-      '<div class="row"><button class="btn" type="button" data-action="edit-photo" data-side="back">' + icon.folder + (back ? 'Change picture' : 'Add a picture') + '</button></div>';
+      '<div data-drop="edit-back">' + (back ? '<img class="cover back-cover" src="' + esc(back) + '" alt="Back of sleeve">' : '<div class="cover cover-blank back-cover" aria-hidden="true"></div>') + '</div>' +
+      '<div class="row"><button class="btn" type="button" data-action="edit-photo" data-side="back">' + icon.folder + (back ? 'Change picture' : 'Choose a photo') + '</button>' +
+      '<button class="btn" type="button" data-action="edit-webcam" data-side="back">' + icon.camera + 'Webcam</button></div>' +
+      '<div class="small muted">You can also drag a photo onto a picture.</div>';
   }
 
   function editValueHtml(r) {
@@ -1092,13 +1060,7 @@
       (s.hasDiscogs ? '<div class="row"><button class="btn blue-line" data-action="test-discogs">' + icon.check + 'Test my Discogs key</button></div><div id="dtest" aria-live="polite"></div>' : '') +
       '<p class="muted">For a value that matches each record’s condition, Discogs also asks you to fill in <a class="link" href="#" data-action="open" data-url="https://www.discogs.com/settings/seller">Seller Settings</a> once (you never have to sell anything). Until then, the app shows the cheapest copy for sale.</p></section>' +
 
-      '<section class="panel"><h2>Read photos automatically (optional)</h2><div>' + status(s.hasClaude) + '</div>' +
-      '<p>With this turned on, a photo of a picture sleeve is enough: Claude reads the name and catalog number for you. It needs an Anthropic API key from the Claude Console, and each photo costs a small amount (usually around a cent).</p>' +
-      '<p class="muted">Without it, photos are still saved as sleeve pictures and you type the name or barcode instead.</p>' +
-      '<form data-form="claude" class="row"><label for="ckey" hidden>Anthropic API key</label><input id="ckey" type="password" class="input" style="flex:1 1 18rem" placeholder="' + (s.hasClaude ? 'Saved. Paste a new one to replace it.' : 'Paste your Anthropic API key here') + '" autocomplete="off">' +
-      '<button class="btn primary" type="submit">Save</button>' + (s.hasClaude ? '<button class="btn" type="button" data-action="clear-key" data-id="anthropicKey">Remove</button>' : '') + '</form>' +
-      '<p class="small muted">Keys are kept on this computer only, locked with Windows’ own protection, and are never put in backups.</p></section>' +
-
+      '<p class="small muted">The key is kept on this computer only, locked with Windows’ own protection, and is never put in backups.</p>' +
       '<section class="panel"><h2>Keep my collection safe</h2><p>Make a backup now and then, for example onto a USB stick.</p>' +
       '<div class="row"><button class="btn primary" data-action="backup">Back up my collection</button><button class="btn" data-action="restore">Restore from a backup</button>' +
       '<button class="btn" data-action="data-folder">Show where it is saved</button><button class="btn" data-action="open-log">Open the look-up log</button></div>' +
@@ -1109,7 +1071,7 @@
   // ---------------- Help ----------------
   function renderHelp() {
     const qa = [
-      ['How do I add a record?', 'Press "Add a record" on the left. Drag a photo of the picture sleeve into the blue box, choose one from your computer, or hold it up to the webcam. You can also just type the name, or the barcode from the back.'],
+      ['How do I add a record?', 'Press "Add a record" on the left. In the search box at the top, type the artist and title, or the number printed on the label, and press Find it. Then press "This one" next to your record. If it can\u2019t be found, press "Type it in myself": there you can add your own photo from the computer or the webcam.'],
       ['Why does it show several versions?', 'Most records were pressed many times, in different years and countries. Pick the one whose label, year and catalog number match yours. The catalog number is usually on the spine and the centre label.'],
       ['Where do the sleeve pictures come from?', 'They are found automatically in a free online library of record sleeves. If there isn’t one, your own photo is used. You can always press "Use my own photo" to change it.'],
       ['How do I mark that I have the picture sleeve?', 'Click a record, then press "Yes, I have it" or "No, I need one". Press "Need a picture sleeve" at the top of My Records to see every record that still needs one.'],
@@ -1193,9 +1155,6 @@
     },
     // add a record
     'for-list': el => { S.add.forList = el.dataset.id; renderAdd(); },
-    'pick-photo': () => choosePhoto({ type: 'add-front' }),
-    'pick-back': () => choosePhoto({ type: 'add-back' }),
-    'webcam': () => webcam({ type: 'add-front' }),
     'pick-match': el => { document.querySelectorAll('.match').forEach(b => { b.disabled = true; }); return pickMatch(el.dataset.id); },
     'manual': () => openManual(),
     'search-all-kinds': () => runSearch(S.add.lastTries || [], S.add.lastMsg, true),
@@ -1209,6 +1168,7 @@
       if (k === 'condition') refreshEditValue();
     },
     'edit-photo': el => choosePhoto({ type: 'edit', side: el.dataset.side }),
+    'edit-webcam': el => webcam({ type: 'edit', side: el.dataset.side }),
     'edit-find-cover': async () => {
       const r = readEditForm();
       toast('Looking for the picture…');
@@ -1326,20 +1286,11 @@
     if (!form) return;
     e.preventDefault();
     const kind = form.dataset.form;
-    if (kind === 'name') {
+    if (kind === 'search') {
       const t = form.querySelector('input').value.trim();
       S.add.name = t;
-      if (!t) { toast('Please type the artist and album.', true); return; }
-      const parts = t.split(/\s+[-–—]\s+/);
-      const tries = parts.length === 2 ? [{ artist: parts[0], title: parts[1] }, { text: t }] : [{ text: t }];
-      await runSearch(tries);
-    } else if (kind === 'code') {
-      const c = form.querySelector('input').value.trim();
-      S.add.code = c;
-      if (!c) { toast('Please type the barcode or catalog number.', true); return; }
-      const digits = c.replace(/\D/g, '');
-      const tries = digits.length >= 8 && digits.length === c.replace(/[\s-]/g, '').length ? [{ barcode: digits }, { catno: c }] : [{ catno: c }, { text: c }];
-      await runSearch(tries, 'Nothing was found for that number. Check it, or type the name instead.');
+      if (!t) { toast('Please type what you are looking for.', true); focusName(); return; }
+      await runSearch(searchTries(t));
     } else if (kind === 'edit') {
       await saveEditor();
     } else if (kind === 'discogs' || kind === 'claude') {
